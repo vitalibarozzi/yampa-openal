@@ -17,7 +17,6 @@ dependencies:
 - StateVar
 - containers
 - ObjectName
-- random
 
 ghc-options:
 - -Wall
@@ -43,3 +42,4 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - yampa-alut
+    - random

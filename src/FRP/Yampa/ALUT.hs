@@ -69,6 +69,7 @@ data Source = Source
     , sourceConeAngles    :: !(V2 Float)
     , sourceConeOuterGain :: !Float
     , sourceState         :: !AL.SourceState
+    -- , sourceRelative      :: ()
     }
   deriving
     (Eq, Show)
@@ -220,17 +221,16 @@ reactInitALUT s sf = do
             Yampa.react lvh (0, Just (soundscapeShouldClose, listenerVelocity))
             Yampa.react lgh (0, Just (soundscapeShouldClose, listenerGain))
             -- TODO we need to look for the right source?
-            let temp = (Map.toList soundscapeSources) !! 0 -- TODO
-            let (sid, Source{..}) = temp -- TODO
-            Yampa.react sxh (0, Just (soundscapeShouldClose, Just sid, sourcePosition))
-            Yampa.react svh (0, Just (soundscapeShouldClose, Just sid, sourceVelocity))
-            Yampa.react sgh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceGain))
-            Yampa.react sph (0, Just (soundscapeShouldClose, Just sid, realToFrac sourcePitch))
-            Yampa.react sdh (0, Just (soundscapeShouldClose, Just sid, sourceDirection))
-            Yampa.react sah (0, Just (soundscapeShouldClose, Just sid, sourceConeAngles))
-            Yampa.react soh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceConeOuterGain))
-            Yampa.react ssh (0, Just (soundscapeShouldClose, Just sid, (soundscapeSources, sourceState)))
-            pure ()
+            let temp = Map.toList soundscapeSources
+            forM_ temp \(sid, Source{..}) -> do
+                Yampa.react sxh (0, Just (soundscapeShouldClose, Just sid, sourcePosition))
+                Yampa.react svh (0, Just (soundscapeShouldClose, Just sid, sourceVelocity))
+                Yampa.react sgh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceGain))
+                Yampa.react sph (0, Just (soundscapeShouldClose, Just sid, realToFrac sourcePitch))
+                Yampa.react sdh (0, Just (soundscapeShouldClose, Just sid, sourceDirection))
+                Yampa.react sah (0, Just (soundscapeShouldClose, Just sid, sourceConeAngles))
+                Yampa.react soh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceConeOuterGain))
+                Yampa.react ssh (0, Just (soundscapeShouldClose, Just sid, (soundscapeSources, sourceState)))
         pure soundscapeShouldClose
 
 
