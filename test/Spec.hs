@@ -15,7 +15,7 @@ import qualified Data.ObjectName as ObjectName
 import Linear.V2
 import Linear.V3
 import qualified FRP.Yampa as Yampa
-import FRP.Yampa (SF,Event(..),returnA)
+import FRP.Yampa (SF,Event(..),returnA,(<<<),arr)
 import Data.IORef
 import Control.Concurrent
 import Control.Monad
@@ -28,40 +28,40 @@ import System.Random
 main :: IO ()
 main = do
 
-    AL.runALUT "heyyy" ["heellp"] \x y -> do
-
+    AL.runALUT "testing-yampa-alut" [] \x y -> do
+     
+     ----------------------------------------------
+      -- resource handling done outside of yampa
       helloSource <- ObjectName.genObjectName
       sineSource  <- ObjectName.genObjectName
-
-      case AL.sourceRelative helloSource of StateVar get set -> set AL.World -- TODO move to reactInitALUT?
-      case AL.sourceRelative sineSource  of StateVar get set -> set AL.World -- TODO move to reactInitALUT??
-
-      let ds = AL.HelloWorld
-      let es = AL.Sine 400 0.93 5
-      bufferDS <- AL.createBuffer ds
-      bufferES <- AL.createBuffer es
-      case AL.buffer helloSource of StateVar get set -> set (Just bufferDS)
-      case AL.buffer sineSource  of StateVar get set -> set (Just bufferES)
-
+      AL.sourceRelative helloSource $= AL.World -- TODO move to reactInitALUT?
+      AL.sourceRelative sineSource  $= AL.World -- TODO move to reactInitALUT??
+      bufferDS <- AL.createBuffer AL.HelloWorld
+      bufferES <- AL.createBuffer (AL.Sine 200 1 10)
+      AL.buffer helloSource $= Just bufferDS
+      AL.buffer sineSource  $= Just bufferES
       stdGen <- getStdGen
-
-      handle <- reactInitALUT () do
+      
+      ----------------------------------------------
+      -- processing done inside yampa
+      handle <- reactInitALUT 0 do
         proc s -> do
-            x <- fmap (*1.2) (Yampa.noise stdGen) -< s
-            y <- fmap (*1.2) (Yampa.noise stdGen) -< s
-            z <- fmap (*1.2) (Yampa.noise stdGen) -< s
-
+            x <- Yampa.noise stdGen -< s
             n <- Yampa.noise stdGen -< s
-
-            m <- Yampa.arr sin Yampa.<<< Yampa.integral -< 2
-            let sources                = [(helloSource, (source helloSource) { sourcePitch = sin m })
-                                         ,(sineSource , (source  sineSource) { sourcePitch = sin n })
-                                         ]
-            let soundscapeSources      = Map.fromList sources
-            let soundscapeListener     = listener { listenerPosition = V3 x y z }
-            let soundscapeShouldClose  = False
+            m <- Yampa.noise stdGen -< s
+            sigX <- Yampa.occasionally stdGen 0.5 () -< s
+            sigY <- Yampa.occasionally stdGen 0.5 () -< s
+            sigZ <- Yampa.occasionally stdGen 0.5 () -< s
+            let sigX_ = if sigX == Event () then x*s*(-1) else x*s
+            let sigY_ = if sigX == Event () then (-1) else 1
+            let sigZ_ = if sigX == Event () then (-1) else 1
+            let soundscapeSources = Map.fromList
+                                        [ (helloSource, (source helloSource) { sourcePitch = sin m, sourceRelative = AL.World })
+                                        , (sineSource , (source  sineSource) { sourcePitch = sin n, sourceRelative = AL.World })
+                                        ]
+            let soundscapeListener = listener { listenerPosition = V3 sigX_ sigY_ sigZ_ }
+            let soundscapeShouldClose = False
             returnA -< Soundscape{..}
-
       forever do
           threadDelay 1000000
-          Yampa.react handle (0.01, Just ())
+          Yampa.react handle (0.01, Just 1.3)

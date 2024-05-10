@@ -5,12 +5,17 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 module FRP.Yampa.ALUT
-    ( Soundscape(..)
+    ( -- *
+      Soundscape(..)
     , Listener(..)
     , Source(..)
-    , reactInitALUT
+
+    -- *
     , source
     , listener
+
+    -- *
+    , reactInitALUT
     )
 where
 
@@ -57,8 +62,7 @@ data Listener = Listener
 
 
 -----------------------------------------------------------
--- | A source of audio, like a radio, playing stuff from a
--- queue.
+-- | A source of audio playing stuff from a queue.
 data Source = Source
     { sourceID            :: !AL.Source
     , sourcePosition      :: !(V3 Float)
@@ -69,6 +73,7 @@ data Source = Source
     , sourceConeAngles    :: !(V2 Float)
     , sourceConeOuterGain :: !Float
     , sourceState         :: !AL.SourceState
+    , sourceRelative      :: !AL.SourceRelative
     -- , sourceRelative      :: ()
     }
   deriving
@@ -76,10 +81,9 @@ data Source = Source
 
 
 -----------------------------------------------------------
+-- | Constructor.
 source :: AL.Source -> Source
-
 {-# INLINE source #-}
-
 source sourceID = 
     Source
         { sourceID            = sourceID
@@ -91,15 +95,15 @@ source sourceID =
         , sourceConeAngles    = 1
         , sourceConeOuterGain = 1
         , sourceState         = AL.Playing
+        , sourceRelative      = AL.Listener
         -- TODO add relative, loop mode, etc
         }
 
 
 -----------------------------------------------------------
+-- | Constructor.
 listener :: Listener
-
 {-# INLINE listener #-}
-
 listener = 
     Listener 
          (V3 0 0 (-1), V3 0 1 0) 
@@ -109,32 +113,27 @@ listener =
 
 
 -----------------------------------------------------------
+-- core function
 reactInitALUT :: 
-
     s ->
-
     SF s Soundscape -> 
-
     IO (ReactHandle s Soundscape)
-
 {-# INLINABLE reactInitALUT #-}
-
 reactInitALUT s sf = do
-    loh <- reactInitListenerHelper listenerOrientation  actuateLOH
-    lph <- reactInitListenerHelper listenerPosition     actuateLPH
-    lvh <- reactInitListenerHelper listenerVelocity     actuateLVH
-    lgh <- reactInitListenerHelper listenerGain         actuateLGH
-    sxh <- reactInitSourceHelper   0                    actuateSXH
-    svh <- reactInitSourceHelper   0                    actuateSVH
-    sgh <- reactInitSourceHelper   1                    actuateSGH
-    sph <- reactInitSourceHelper   1                    actuateSPH
-    sdh <- reactInitSourceHelper   1                    actuateSDH
-    sah <- reactInitSourceHelper   1                    actuateSAH
-    soh <- reactInitSourceHelper   1                    actuateSOH
-    ssh <- reactInitSourceHelper (Map.empty, AL.Playing)actuateSSH
+    loh <- reactInitListenerHelper listenerOrientation   actuateLOH
+    lph <- reactInitListenerHelper listenerPosition      actuateLPH
+    lvh <- reactInitListenerHelper listenerVelocity      actuateLVH
+    lgh <- reactInitListenerHelper listenerGain          actuateLGH
+    sxh <- reactInitSourceHelper   0                     actuateSXH
+    svh <- reactInitSourceHelper   0                     actuateSVH
+    sgh <- reactInitSourceHelper   1                     actuateSGH
+    sph <- reactInitSourceHelper   1                     actuateSPH
+    sdh <- reactInitSourceHelper   1                     actuateSDH
+    sah <- reactInitSourceHelper   1                     actuateSAH
+    soh <- reactInitSourceHelper   1                     actuateSOH
+    ssh <- reactInitSourceHelper (Map.empty, AL.Playing) actuateSSH
     reactInit (pure s) (actuate (sxh,svh,sgh,sph,sdh,sah,soh,ssh) (lgh,lvh,lph,loh)) sf
   where
-    fsv = fooStateVar
     actuateLOH _ updated (shouldClose, (vA, vB)) = fsv updated shouldClose AL.orientation      (v3ToVector vA, v3ToVector vB)
     actuateLPH _ updated (shouldClose,       vA) = fsv updated shouldClose AL.listenerPosition (v3ToVertex vA)
     actuateLVH _ updated (shouldClose,       vA) = fsv updated shouldClose AL.listenerVelocity (v3ToVector vA)
@@ -179,6 +178,7 @@ reactInitALUT s sf = do
             Nothing -> pure ()
             Just sid -> do
                 when updated do
+                    threadDelay 1
                     let usource Source{..} = do
                                  case AL.sourceState sid of 
                                     get -> do
@@ -204,59 +204,87 @@ reactInitALUT s sf = do
                                                         case sourceState of
                                                             AL.Playing -> return (mempty { actionPlay = [sid] })
                                                             __________ -> undefined
-
                     let concatActions = foldr (<>) action
-
                     let wsources = forM sources usource
-
                     runActions =<< (concatActions <$> wsources)
-
         pure shouldClose
 
+    -- TODO lol these arguments need to go
     actuate (sxh,svh,sgh,sph,sdh,sah,soh,ssh) (lgh,lvh,lxh,loh) handle updated Soundscape{..} = do 
-        when updated do
-            let Listener{..} = soundscapeListener
-            Yampa.react loh (0, Just (soundscapeShouldClose, listenerOrientation))
-            Yampa.react lxh (0, Just (soundscapeShouldClose, listenerPosition))
-            Yampa.react lvh (0, Just (soundscapeShouldClose, listenerVelocity))
-            Yampa.react lgh (0, Just (soundscapeShouldClose, listenerGain))
-            -- TODO we need to look for the right source?
-            let temp = Map.toList soundscapeSources
-            forM_ temp \(sid, Source{..}) -> do
-                Yampa.react sxh (0, Just (soundscapeShouldClose, Just sid, sourcePosition))
-                Yampa.react svh (0, Just (soundscapeShouldClose, Just sid, sourceVelocity))
-                Yampa.react sgh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceGain))
-                Yampa.react sph (0, Just (soundscapeShouldClose, Just sid, realToFrac sourcePitch))
-                Yampa.react sdh (0, Just (soundscapeShouldClose, Just sid, sourceDirection))
-                Yampa.react sah (0, Just (soundscapeShouldClose, Just sid, sourceConeAngles))
-                Yampa.react soh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceConeOuterGain))
-                Yampa.react ssh (0, Just (soundscapeShouldClose, Just sid, (soundscapeSources, sourceState)))
+        when updated do 
+            threadDelay 1
+
+            let listenerZone = do
+                    let Listener{..} = soundscapeListener
+                    Yampa.react loh (0, Just (soundscapeShouldClose, listenerOrientation))
+                    Yampa.react lxh (0, Just (soundscapeShouldClose, listenerPosition))
+                    Yampa.react lvh (0, Just (soundscapeShouldClose, listenerVelocity))
+                    Yampa.react lgh (0, Just (soundscapeShouldClose, listenerGain))
+
+            let sourcesZone temp = do
+                    -- TODO check if would gain anything by parallelizing this
+                    forM_ temp \(sid, Source{..}) -> do
+                        Yampa.react sxh (0, Just (soundscapeShouldClose, Just sid, sourcePosition))
+                        Yampa.react svh (0, Just (soundscapeShouldClose, Just sid, sourceVelocity))
+                        Yampa.react sgh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceGain))
+                        Yampa.react sph (0, Just (soundscapeShouldClose, Just sid, realToFrac sourcePitch))
+                        Yampa.react sdh (0, Just (soundscapeShouldClose, Just sid, sourceDirection))
+                        Yampa.react sah (0, Just (soundscapeShouldClose, Just sid, sourceConeAngles))
+                        Yampa.react soh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceConeOuterGain))
+                        Yampa.react ssh (0, Just (soundscapeShouldClose, Just sid, (soundscapeSources, sourceState)))
+
+            listenerZone
+            sourcesZone (Map.toList soundscapeSources)
+
         pure soundscapeShouldClose
 
-
-    fooStateVar updated shouldClose get_ set_ = do 
-        when updated do case get_ of StateVar _ set -> set set_
-        pure shouldClose
-
-    reactInitListenerHelper component actuate = 
-        reactInit (pure (False, component listener)) actuate Yampa.identity
-
-    reactInitSourceHelper component actuate = 
-        reactInit (pure (False, Nothing,component)) actuate Yampa.identity
 
 
     
 -------------------------------------------------------------------------------
 -- INTERNALS ------------------------------------------------------------------
 -------------------------------------------------------------------------------
+
+
+data SourceHandles s = SourceHandles
+    { sourceHandlesPosition :: () -- ReactHandle
+    , sourceHandlesVelocity :: () -- ReactHandle
+    -- TODO .. etc
+    }
+
+
+data ListenerHandles s = ListenerHandles 
+    -- TODO lgh
+    -- TODO lvh
+    -- TODO lxh
+    -- TODO loh
+
+
+fsv = fooStateVar -- TODO
+
+
+-- TODO
+fooStateVar updated shouldClose get_ set_ = do 
+        when updated do case get_ of StateVar _ set -> set set_
+        pure shouldClose
     
 
+reactInitListenerHelper component actuate = 
+    reactInit (pure (False, component listener)) actuate Yampa.identity
+
+
+reactInitSourceHelper component actuate = 
+    reactInit (pure (False, Nothing, component)) actuate Yampa.identity
+
+
 ------------------------------------------------------------
+-- TODO currently doest not check if the same source is in 
+-- opposite actions at the same time
 data Action = Action
-    { actionPlay   :: [AL.Source]
-    , actionStop   :: [AL.Source]
-    , actionPause  :: [AL.Source]
-    , actionRewind :: [AL.Source]
+    { actionPlay   :: ![AL.Source]
+    , actionStop   :: ![AL.Source]
+    , actionPause  :: ![AL.Source]
+    , actionRewind :: ![AL.Source]
     }
   deriving
     (Eq, Show)
@@ -270,6 +298,7 @@ instance Monoid Action where
 
 
 ------------------------------------------------------------
+-- | Constructor.
 action :: Action
 action = Action [] [] [] []
 
@@ -277,25 +306,37 @@ action = Action [] [] [] []
 ------------------------------------------------------------
 runActions :: Action -> IO ()
 runActions Action{..} = do
-    AL.stop   actionStop
-    AL.pause  actionPause
-    AL.play   actionPlay
+    threadDelay 1
+    AL.stop actionStop
+    AL.pause actionPause
+    AL.play actionPlay
     AL.rewind actionRewind
 
 
 ------------------------------------------------------------
+-- | Number conversion thing.
 v3ToVertex :: V3 Float -> AL.Vertex3 AL.ALfloat
 v3ToVertex (V3 x y z) = 
-    AL.Vertex3 (realToFrac x) (realToFrac y) (realToFrac z)
+    AL.Vertex3 
+        (realToFrac x) 
+        (realToFrac y) 
+        (realToFrac z)
 
 
 ------------------------------------------------------------
+-- | Number conversion thing.
 v3ToVector :: V3 Float -> AL.Vector3 AL.ALfloat
 v3ToVector (V3 x y z) =
-    AL.Vector3 (realToFrac x) (realToFrac y) (realToFrac z)
+    AL.Vector3 
+        (realToFrac x) 
+        (realToFrac y) 
+        (realToFrac z)
 
 
 ------------------------------------------------------------
+-- | Number conversion thing.
 v2ToVectorPair :: V2 Float -> (AL.ALfloat, AL.ALfloat)
 v2ToVectorPair (V2 a b) =
-    (realToFrac a, realToFrac b)
+    ( realToFrac a
+    , realToFrac b
+    )
