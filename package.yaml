@@ -1,4 +1,4 @@
-name:                yampa-alut
+name:                yampa-openal
 version:             0.1.0.0
 github:              "githubuser/yampa-alut"
 license:             BSD-3-Clause
@@ -41,5 +41,5 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - yampa-alut
+    - yampa-openal
     - random

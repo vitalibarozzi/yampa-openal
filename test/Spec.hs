@@ -4,7 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-import FRP.Yampa.ALUT
+import FRP.Yampa.OpenAL
 import qualified Sound.OpenAL.AL.Listener as AL
 import qualified Sound.OpenAL.AL.Buffer as AL
 import qualified Sound.OpenAL.AL.Source as AL
@@ -44,7 +44,7 @@ main = do
       
       ----------------------------------------------
       -- processing done inside yampa
-      handle <- reactInitALUT 0 do
+      handle <- reactInitOpenAL 0 do
         proc s -> do
             x <- Yampa.noise stdGen -< s
             n <- Yampa.noise stdGen -< s

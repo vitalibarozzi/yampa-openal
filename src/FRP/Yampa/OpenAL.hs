@@ -4,18 +4,19 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-module FRP.Yampa.ALUT
+module FRP.Yampa.OpenAL
     ( -- *
       Soundscape(..)
     , Listener(..)
     , Source(..)
 
-    -- *
+    -- * Constructors
+    , soundscape
     , source
     , listener
 
     -- *
-    , reactInitALUT
+    , reactInitOpenAL
     )
 where
 
@@ -38,12 +39,17 @@ import Data.StateVar
 import qualified Data.Map as Map
 
 
+
 -----------------------------------------------------------
 -- | A model of the how the sound elements change overtime.
 data Soundscape = Soundscape
     { soundscapeSources     :: !(Map.Map AL.Source Source)
     , soundscapeListener    :: !Listener
     , soundscapeShouldClose :: !Bool
+    -- TODO
+    -- soundscapeDopplerFactor :: Float
+    -- soundscapeSpeedOfSound :: Float
+    -- soundscapeDistanceModel :: ...
     }
   deriving
     (Eq, Show)
@@ -82,6 +88,29 @@ data Source = Source
 
 -----------------------------------------------------------
 -- | Constructor.
+soundscape :: Soundscape
+{-# INLINE soundscape #-}
+soundscape = 
+    Soundscape 
+        mempty
+        listener
+        False
+
+
+-----------------------------------------------------------
+-- | Constructor.
+listener :: Listener
+{-# INLINE listener #-}
+listener = 
+    Listener 
+         (V3 0 0 (-1), V3 0 1 0) 
+         (V3 0 0 0) 
+         (V3 0 0 0) 
+         1
+
+
+-----------------------------------------------------------
+-- | Constructor.
 source :: AL.Source -> Source
 {-# INLINE source #-}
 source sourceID = 
@@ -101,25 +130,19 @@ source sourceID =
 
 
 -----------------------------------------------------------
--- | Constructor.
-listener :: Listener
-{-# INLINE listener #-}
-listener = 
-    Listener 
-         (V3 0 0 (-1), V3 0 1 0) 
-         (V3 0 0 0) 
-         (V3 0 0 0) 
-         1
-
-
------------------------------------------------------------
 -- core function
-reactInitALUT :: 
-    s ->
+reactInitOpenAL :: 
+
+    s -> 
+
     SF s Soundscape -> 
+
     IO (ReactHandle s Soundscape)
-{-# INLINABLE reactInitALUT #-}
-reactInitALUT s sf = do
+
+{-# INLINABLE reactInitOpenAL #-}
+
+reactInitOpenAL s sf = do
+
     loh <- reactInitListenerHelper listenerOrientation   actuateLOH
     lph <- reactInitListenerHelper listenerPosition      actuateLPH
     lvh <- reactInitListenerHelper listenerVelocity      actuateLVH
@@ -133,7 +156,32 @@ reactInitALUT s sf = do
     soh <- reactInitSourceHelper   1                     actuateSOH
     ssh <- reactInitSourceHelper (Map.empty, AL.Playing) actuateSSH
     reactInit (pure s) (actuate (sxh,svh,sgh,sph,sdh,sah,soh,ssh) (lgh,lvh,lph,loh)) sf
+    -- TODO missing the close check
   where
+    -- TODO lol these arguments need to go
+    actuate (sxh,svh,sgh,sph,sdh,sah,soh,ssh) (lgh,lvh,lxh,loh) handle updated Soundscape{..} = do 
+        when updated do 
+            threadDelay 1
+            let listenerZone = do
+                    let Listener{..} = soundscapeListener
+                    Yampa.react loh (0, Just (soundscapeShouldClose, listenerOrientation))
+                    Yampa.react lxh (0, Just (soundscapeShouldClose, listenerPosition))
+                    Yampa.react lvh (0, Just (soundscapeShouldClose, listenerVelocity))
+                    Yampa.react lgh (0, Just (soundscapeShouldClose, listenerGain))
+            let sourcesZone temp = do
+                    -- TODO check if would gain anything by parallelizing this
+                    forM_ temp \(sid, Source{..}) -> do
+                        Yampa.react sxh (0, Just (soundscapeShouldClose, Just sid, sourcePosition))
+                        Yampa.react svh (0, Just (soundscapeShouldClose, Just sid, sourceVelocity))
+                        Yampa.react sgh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceGain))
+                        Yampa.react sph (0, Just (soundscapeShouldClose, Just sid, realToFrac sourcePitch))
+                        Yampa.react sdh (0, Just (soundscapeShouldClose, Just sid, sourceDirection))
+                        Yampa.react sah (0, Just (soundscapeShouldClose, Just sid, sourceConeAngles))
+                        Yampa.react soh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceConeOuterGain))
+                        Yampa.react ssh (0, Just (soundscapeShouldClose, Just sid, (soundscapeSources, sourceState)))
+            listenerZone
+            sourcesZone (Map.toList soundscapeSources)
+        pure soundscapeShouldClose
     actuateLOH _ updated (shouldClose, (vA, vB)) = fsv updated shouldClose AL.orientation      (v3ToVector vA, v3ToVector vB)
     actuateLPH _ updated (shouldClose,       vA) = fsv updated shouldClose AL.listenerPosition (v3ToVertex vA)
     actuateLVH _ updated (shouldClose,       vA) = fsv updated shouldClose AL.listenerVelocity (v3ToVector vA)
@@ -209,72 +257,21 @@ reactInitALUT s sf = do
                     runActions =<< (concatActions <$> wsources)
         pure shouldClose
 
-    -- TODO lol these arguments need to go
-    actuate (sxh,svh,sgh,sph,sdh,sah,soh,ssh) (lgh,lvh,lxh,loh) handle updated Soundscape{..} = do 
-        when updated do 
-            threadDelay 1
-
-            let listenerZone = do
-                    let Listener{..} = soundscapeListener
-                    Yampa.react loh (0, Just (soundscapeShouldClose, listenerOrientation))
-                    Yampa.react lxh (0, Just (soundscapeShouldClose, listenerPosition))
-                    Yampa.react lvh (0, Just (soundscapeShouldClose, listenerVelocity))
-                    Yampa.react lgh (0, Just (soundscapeShouldClose, listenerGain))
-
-            let sourcesZone temp = do
-                    -- TODO check if would gain anything by parallelizing this
-                    forM_ temp \(sid, Source{..}) -> do
-                        Yampa.react sxh (0, Just (soundscapeShouldClose, Just sid, sourcePosition))
-                        Yampa.react svh (0, Just (soundscapeShouldClose, Just sid, sourceVelocity))
-                        Yampa.react sgh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceGain))
-                        Yampa.react sph (0, Just (soundscapeShouldClose, Just sid, realToFrac sourcePitch))
-                        Yampa.react sdh (0, Just (soundscapeShouldClose, Just sid, sourceDirection))
-                        Yampa.react sah (0, Just (soundscapeShouldClose, Just sid, sourceConeAngles))
-                        Yampa.react soh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceConeOuterGain))
-                        Yampa.react ssh (0, Just (soundscapeShouldClose, Just sid, (soundscapeSources, sourceState)))
-
-            listenerZone
-            sourcesZone (Map.toList soundscapeSources)
-
-        pure soundscapeShouldClose
-
-
-
     
 -------------------------------------------------------------------------------
 -- INTERNALS ------------------------------------------------------------------
 -------------------------------------------------------------------------------
 
 
-data SourceHandles s = SourceHandles
-    { sourceHandlesPosition :: () -- ReactHandle
-    , sourceHandlesVelocity :: () -- ReactHandle
-    -- TODO .. etc
-    }
-
-
-data ListenerHandles s = ListenerHandles 
-    -- TODO lgh
-    -- TODO lvh
-    -- TODO lxh
-    -- TODO loh
-
-
-fsv = fooStateVar -- TODO
-
-
--- TODO
-fooStateVar updated shouldClose get_ set_ = do 
-        when updated do case get_ of StateVar _ set -> set set_
-        pure shouldClose
+fsv = setStateVar -- TODO
+setStateVar updated shouldClose (StateVar _get _set) setA = do 
+    when updated do _set setA
+    pure shouldClose -- TODO no one is checking this, can just be false 
     
 
-reactInitListenerHelper component actuate = 
-    reactInit (pure (False, component listener)) actuate Yampa.identity
+reactInitListenerHelper component actuate = reactInit (pure (False, component listener)) actuate Yampa.identity
 
-
-reactInitSourceHelper component actuate = 
-    reactInit (pure (False, Nothing, component)) actuate Yampa.identity
+reactInitSourceHelper   component actuate = reactInit (pure (False, Nothing, component)) actuate Yampa.identity
 
 
 ------------------------------------------------------------
@@ -300,11 +297,13 @@ instance Monoid Action where
 ------------------------------------------------------------
 -- | Constructor.
 action :: Action
+{-# INLINE action #-}
 action = Action [] [] [] []
 
 
 ------------------------------------------------------------
 runActions :: Action -> IO ()
+{-# INLINE runActions #-}
 runActions Action{..} = do
     threadDelay 1
     AL.stop actionStop
@@ -316,6 +315,7 @@ runActions Action{..} = do
 ------------------------------------------------------------
 -- | Number conversion thing.
 v3ToVertex :: V3 Float -> AL.Vertex3 AL.ALfloat
+{-# INLINE v3ToVertex #-}
 v3ToVertex (V3 x y z) = 
     AL.Vertex3 
         (realToFrac x) 
@@ -326,6 +326,7 @@ v3ToVertex (V3 x y z) =
 ------------------------------------------------------------
 -- | Number conversion thing.
 v3ToVector :: V3 Float -> AL.Vector3 AL.ALfloat
+{-# INLINE v3ToVector #-}
 v3ToVector (V3 x y z) =
     AL.Vector3 
         (realToFrac x) 
@@ -336,6 +337,7 @@ v3ToVector (V3 x y z) =
 ------------------------------------------------------------
 -- | Number conversion thing.
 v2ToVectorPair :: V2 Float -> (AL.ALfloat, AL.ALfloat)
+{-# INLINE v2ToVectorPair #-}
 v2ToVectorPair (V2 a b) =
     ( realToFrac a
     , realToFrac b
