@@ -1,4 +1,5 @@
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE LambdaCase #-}
@@ -23,6 +24,7 @@ import Foreign.Storable
 import Data.StateVar
 import qualified Data.Map as Map
 import System.Random
+import Unsafe.Coerce
 
 
 main :: IO ()
@@ -34,8 +36,6 @@ main = do
       -- resource handling done outside of yampa
       helloSource <- ObjectName.genObjectName
       sineSource  <- ObjectName.genObjectName
-      AL.sourceRelative helloSource $= AL.World -- TODO move to reactInitALUT?
-      AL.sourceRelative sineSource  $= AL.World -- TODO move to reactInitALUT??
       bufferDS <- AL.createBuffer AL.HelloWorld
       bufferES <- AL.createBuffer (AL.Sine 200 1 10)
       AL.buffer helloSource $= Just bufferDS
@@ -44,7 +44,7 @@ main = do
       
       ----------------------------------------------
       -- processing done inside yampa
-      handle <- reactInitOpenAL 0 do
+      handle <- reactInitOpenAL (pure 0) do
         proc s -> do
             x <- Yampa.noise stdGen -< s
             n <- Yampa.noise stdGen -< s
@@ -55,13 +55,17 @@ main = do
             let sigX_ = if sigX == Event () then x*s*(-1) else x*s
             let sigY_ = if sigX == Event () then (-1) else 1
             let sigZ_ = if sigX == Event () then (-1) else 1
+            d <- Yampa.time -< s
             let soundscapeSources = Map.fromList
-                                        [ (helloSource, (source helloSource) { sourcePitch = sin m, sourceRelative = AL.World })
-                                        , (sineSource , (source  sineSource) { sourcePitch = sin n, sourceRelative = AL.World })
+                                        [ (helloSource, (source helloSource) { sourcePitch = sin (realToFrac d+m), sourceRelative = AL.World })
+                                        , (sineSource, (source  sineSource) { sourcePitch = sin n, sourceRelative = AL.World })
                                         ]
             let soundscapeListener = listener { listenerPosition = V3 sigX_ sigY_ sigZ_ }
-            let soundscapeShouldClose = False
+            soundscapeShouldClose <- Yampa.delay 5 False -< False
+            soundscapeDopplerFactor <- returnA -< 1
+            soundscapeSpeedOfSound <- returnA -< 1
+            soundscapeDistanceModel <- returnA -< ()
             returnA -< Soundscape{..}
       forever do
-          threadDelay 1000000
-          Yampa.react handle (0.01, Just 1.3)
+          threadDelay 100000
+          Yampa.react handle (0.1, Just 1.3)

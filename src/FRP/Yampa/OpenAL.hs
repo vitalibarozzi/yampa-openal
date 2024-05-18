@@ -1,4 +1,7 @@
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BlockArguments #-}
@@ -9,6 +12,8 @@ module FRP.Yampa.OpenAL
       Soundscape(..)
     , Listener(..)
     , Source(..)
+    -- , SourceRelative(..)
+    -- , SourceState(..)
 
     -- * Constructors
     , soundscape
@@ -17,6 +22,8 @@ module FRP.Yampa.OpenAL
 
     -- *
     , reactInitOpenAL
+    
+    , runSoundscape
     )
 where
 
@@ -37,22 +44,25 @@ import Control.Monad
 import Foreign.Storable
 import Data.StateVar
 import qualified Data.Map as Map
-
+import Data.TreeDiff.Expr
+import Data.TreeDiff.Class
+import Data.TreeDiff.Pretty
+import Data.TreeDiff.OMap
+import GHC.Generics
 
 
 -----------------------------------------------------------
 -- | A model of the how the sound elements change overtime.
 data Soundscape = Soundscape
-    { soundscapeSources     :: !(Map.Map AL.Source Source)
-    , soundscapeListener    :: !Listener
-    , soundscapeShouldClose :: !Bool
-    -- TODO
-    -- soundscapeDopplerFactor :: Float
-    -- soundscapeSpeedOfSound :: Float
-    -- soundscapeDistanceModel :: ...
+    { soundscapeSources       :: !(Map.Map AL.Source Source)
+    , soundscapeListener      :: !Listener
+    , soundscapeShouldClose   :: !Bool
+    , soundscapeDopplerFactor :: !Float
+    , soundscapeSpeedOfSound  :: !Float
+    , soundscapeDistanceModel :: !() -- TODO
     }
   deriving
-    (Eq, Show)
+    (Eq, Show) -- , Generic, ToExpr)
 
 
 -----------------------------------------------------------
@@ -64,7 +74,7 @@ data Listener = Listener
    , listenerGain        :: !Float
    }
   deriving
-    (Eq, Show)
+    (Eq, Show) -- , Generic, ToExpr)
 
 
 -----------------------------------------------------------
@@ -80,10 +90,17 @@ data Source = Source
     , sourceConeOuterGain :: !Float
     , sourceState         :: !AL.SourceState
     , sourceRelative      :: !AL.SourceRelative
-    -- , sourceRelative      :: ()
     }
   deriving
-    (Eq, Show)
+    (Eq, Show) -- , Generic, ToExpr)
+
+
+-----------------------------------------------------------
+instance ToExpr  (V3 Float)
+
+
+-----------------------------------------------------------
+instance ToExpr  (V2 Float)
 
 
 -----------------------------------------------------------
@@ -95,6 +112,9 @@ soundscape =
         mempty
         listener
         False
+        1
+        1
+        ()
 
 
 -----------------------------------------------------------
@@ -119,21 +139,58 @@ source sourceID =
         , sourcePosition      = 0
         , sourceVelocity      = 0
         , sourceGain          = 1
-        , sourcePitch         = 1.8
+        , sourcePitch         = 1
         , sourceDirection     = 1
         , sourceConeAngles    = 1
         , sourceConeOuterGain = 1
         , sourceState         = AL.Playing
-        , sourceRelative      = AL.Listener
-        -- TODO add relative, loop mode, etc
+        , sourceRelative      = AL.World
         }
 
 
 -----------------------------------------------------------
--- core function
+-- | Assumes ALUT was already started.
+runSoundscape ::
+
+    Soundscape ->
+
+    IO ()
+
+{-# INLINEABLE runSoundscape #-}
+
+runSoundscape s1 = do
+    threadDelay 1
+    let Listener{..} = soundscapeListener s1           
+    let (vA,vB) = listenerOrientation
+    AL.orientation      $= (_v3ToVector vA, _v3ToVector vB)
+    AL.listenerPosition $= _v3ToVertex vA
+    AL.listenerVelocity $= _v3ToVector vA
+    AL.listenerGain     $= realToFrac listenerGain
+    forM_ (Map.toList (soundscapeSources s1)) \(sid,source) -> do
+        threadDelay 1
+        AL.sourcePosition sid $= _v3ToVertex (sourcePosition source)
+        AL.sourceVelocity sid $= _v3ToVector (sourceVelocity source)
+        AL.pitch          sid $= (realToFrac (sourcePitch source))
+        AL.sourceGain     sid $= realToFrac (sourceGain  source)
+        AL.direction      sid $= _v3ToVector (sourceDirection source)
+        AL.sourceRelative sid $= sourceRelative source
+        AL.coneAngles     sid $= _v2ToVectorPair (sourceConeAngles source)
+        AL.coneOuterGain  sid $= realToFrac (sourceConeOuterGain source)
+        current <- AL.sourceState sid
+        case (sourceState source, current) of
+            (AL.Playing, AL.Playing) -> pure ()
+            (AL.Playing, __________) -> AL.play [sid]
+            (AL.Stopped, AL.Stopped) -> pure ()
+            (AL.Stopped, __________) -> AL.stop [sid]
+            (AL.Initial, AL.Initial) -> pure ()
+            (AL.Initial, __________) -> AL.stop [sid]
+
+
+-----------------------------------------------------------
+-- | Assumes ALUT was already started.
 reactInitOpenAL :: 
 
-    s -> 
+    IO s -> 
 
     SF s Soundscape -> 
 
@@ -141,182 +198,19 @@ reactInitOpenAL ::
 
 {-# INLINABLE reactInitOpenAL #-}
 
-reactInitOpenAL s sf = do
-
-    loh <- reactInitListenerHelper listenerOrientation   actuateLOH
-    lph <- reactInitListenerHelper listenerPosition      actuateLPH
-    lvh <- reactInitListenerHelper listenerVelocity      actuateLVH
-    lgh <- reactInitListenerHelper listenerGain          actuateLGH
-    sxh <- reactInitSourceHelper   0                     actuateSXH
-    svh <- reactInitSourceHelper   0                     actuateSVH
-    sgh <- reactInitSourceHelper   1                     actuateSGH
-    sph <- reactInitSourceHelper   1                     actuateSPH
-    sdh <- reactInitSourceHelper   1                     actuateSDH
-    sah <- reactInitSourceHelper   1                     actuateSAH
-    soh <- reactInitSourceHelper   1                     actuateSOH
-    ssh <- reactInitSourceHelper (Map.empty, AL.Playing) actuateSSH
-    reactInit (pure s) (actuate (sxh,svh,sgh,sph,sdh,sah,soh,ssh) (lgh,lvh,lph,loh)) sf
-    -- TODO missing the close check
+reactInitOpenAL initS = do
+    reactInit initS actuate
   where
-    -- TODO lol these arguments need to go
-    actuate (sxh,svh,sgh,sph,sdh,sah,soh,ssh) (lgh,lvh,lxh,loh) handle updated Soundscape{..} = do 
-        when updated do 
-            threadDelay 1
-            let listenerZone = do
-                    let Listener{..} = soundscapeListener
-                    Yampa.react loh (0, Just (soundscapeShouldClose, listenerOrientation))
-                    Yampa.react lxh (0, Just (soundscapeShouldClose, listenerPosition))
-                    Yampa.react lvh (0, Just (soundscapeShouldClose, listenerVelocity))
-                    Yampa.react lgh (0, Just (soundscapeShouldClose, listenerGain))
-            let sourcesZone temp = do
-                    -- TODO check if would gain anything by parallelizing this
-                    forM_ temp \(sid, Source{..}) -> do
-                        Yampa.react sxh (0, Just (soundscapeShouldClose, Just sid, sourcePosition))
-                        Yampa.react svh (0, Just (soundscapeShouldClose, Just sid, sourceVelocity))
-                        Yampa.react sgh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceGain))
-                        Yampa.react sph (0, Just (soundscapeShouldClose, Just sid, realToFrac sourcePitch))
-                        Yampa.react sdh (0, Just (soundscapeShouldClose, Just sid, sourceDirection))
-                        Yampa.react sah (0, Just (soundscapeShouldClose, Just sid, sourceConeAngles))
-                        Yampa.react soh (0, Just (soundscapeShouldClose, Just sid, realToFrac sourceConeOuterGain))
-                        Yampa.react ssh (0, Just (soundscapeShouldClose, Just sid, (soundscapeSources, sourceState)))
-            listenerZone
-            sourcesZone (Map.toList soundscapeSources)
-        pure soundscapeShouldClose
-    actuateLOH _ updated (shouldClose, (vA, vB)) = fsv updated shouldClose AL.orientation      (v3ToVector vA, v3ToVector vB)
-    actuateLPH _ updated (shouldClose,       vA) = fsv updated shouldClose AL.listenerPosition (v3ToVertex vA)
-    actuateLVH _ updated (shouldClose,       vA) = fsv updated shouldClose AL.listenerVelocity (v3ToVector vA)
-    actuateLGH _ updated (shouldClose,        g) = fsv updated shouldClose AL.listenerGain     (realToFrac g)
-    actuateSXH _ updated (shouldClose, msid, sourcePosition) = do 
-        case msid of
-            Nothing -> pure ()
-            Just sid -> when updated do case AL.sourcePosition sid of StateVar get set -> set (v3ToVertex sourcePosition)
-        pure shouldClose
-    actuateSVH _ updated (shouldClose, msid, sourceVelocity) = do
-        case msid of
-            Nothing -> pure ()
-            Just sid -> when updated do case AL.sourceVelocity sid of StateVar get set -> set (v3ToVector sourceVelocity)
-        pure shouldClose
-    actuateSGH _ updated (shouldClose, msid, sourceGain) = do
-        case msid of
-            Nothing -> pure ()
-            Just sid -> when updated do case AL.sourceGain sid of StateVar get set -> set (realToFrac sourceGain)
-        pure shouldClose
-    actuateSPH _ updated (shouldClose, msid, sourcePitch) = do
-        case msid of
-            Nothing -> pure ()
-            Just sid -> when updated do case AL.pitch sid of StateVar get set -> set (realToFrac sourcePitch)
-        pure shouldClose
-    actuateSDH _ updated (shouldClose, msid, sourceDirection) = do
-        case msid of
-            Nothing -> pure ()
-            Just sid -> when updated do case AL.direction sid of StateVar get set -> set (v3ToVector sourceDirection)
-        pure shouldClose
-    actuateSAH _ updated (shouldClose, msid, coneAngles) = do
-        case msid of
-            Nothing -> pure ()
-            Just sid -> when updated do case AL.coneAngles sid of StateVar get set -> set (v2ToVectorPair coneAngles)
-        pure shouldClose
-    actuateSOH _ updated (shouldClose, msid, coneOuterGain) = do
-        case msid of
-            Nothing -> pure ()
-            Just sid -> when updated do case AL.coneOuterGain sid of StateVar get set -> set (realToFrac coneOuterGain)
-        pure shouldClose
-    actuateSSH _ updated (shouldClose, msid, (sources, sourceState)) = do
-        case msid of
-            Nothing -> pure ()
-            Just sid -> do
-                when updated do
-                    threadDelay 1
-                    let usource Source{..} = do
-                                 case AL.sourceState sid of 
-                                    get -> do
-                                        current <- get
-                                        if sourceState == current
-                                            then return mempty
-                                            else case current of
-                                                    AL.Initial ->
-                                                        case sourceState of
-                                                            AL.Playing -> return (mempty { actionPlay = [sid] })
-                                                            __________ -> return mempty
-                                                    AL.Playing ->
-                                                        case sourceState of
-                                                            AL.Stopped -> return (mempty { actionStop   = [sid] })
-                                                            AL.Playing -> return mempty
-                                                            __________ -> undefined
-                                                    AL.Paused  ->
-                                                        case sourceState of
-                                                            AL.Playing -> return (mempty { actionPlay   = [sid] })
-                                                            AL.Initial -> return (mempty { actionRewind = [sid] })
-                                                            __________ -> undefined
-                                                    AL.Stopped ->
-                                                        case sourceState of
-                                                            AL.Playing -> return (mempty { actionPlay = [sid] })
-                                                            __________ -> undefined
-                    let concatActions = foldr (<>) action
-                    let wsources = forM sources usource
-                    runActions =<< (concatActions <$> wsources)
-        pure shouldClose
-
-    
--------------------------------------------------------------------------------
--- INTERNALS ------------------------------------------------------------------
--------------------------------------------------------------------------------
-
-
-fsv = setStateVar -- TODO
-setStateVar updated shouldClose (StateVar _get _set) setA = do 
-    when updated do _set setA
-    pure shouldClose -- TODO no one is checking this, can just be false 
-    
-
-reactInitListenerHelper component actuate = reactInit (pure (False, component listener)) actuate Yampa.identity
-
-reactInitSourceHelper   component actuate = reactInit (pure (False, Nothing, component)) actuate Yampa.identity
-
-
-------------------------------------------------------------
--- TODO currently doest not check if the same source is in 
--- opposite actions at the same time
-data Action = Action
-    { actionPlay   :: ![AL.Source]
-    , actionStop   :: ![AL.Source]
-    , actionPause  :: ![AL.Source]
-    , actionRewind :: ![AL.Source]
-    }
-  deriving
-    (Eq, Show)
-
-instance Semigroup Action where
-    Action pl0 st0 pa0 re0 <> Action pl1 st1 pa1 re1 =
-        Action (pl0 <> pl1) (st0 <> st1) (pa0 <> pa1) (re0 <> re1)
-
-instance Monoid Action where
-    mempty = action
-
-
-------------------------------------------------------------
--- | Constructor.
-action :: Action
-{-# INLINE action #-}
-action = Action [] [] [] []
-
-
-------------------------------------------------------------
-runActions :: Action -> IO ()
-{-# INLINE runActions #-}
-runActions Action{..} = do
-    threadDelay 1
-    AL.stop actionStop
-    AL.pause actionPause
-    AL.play actionPlay
-    AL.rewind actionRewind
+    actuate handle updated ss = do
+        runSoundscape ss
+        pure updated
 
 
 ------------------------------------------------------------
 -- | Number conversion thing.
-v3ToVertex :: V3 Float -> AL.Vertex3 AL.ALfloat
-{-# INLINE v3ToVertex #-}
-v3ToVertex (V3 x y z) = 
+_v3ToVertex :: V3 Float -> AL.Vertex3 AL.ALfloat
+{-# INLINE _v3ToVertex #-}
+_v3ToVertex (V3 x y z) = 
     AL.Vertex3 
         (realToFrac x) 
         (realToFrac y) 
@@ -325,9 +219,9 @@ v3ToVertex (V3 x y z) =
 
 ------------------------------------------------------------
 -- | Number conversion thing.
-v3ToVector :: V3 Float -> AL.Vector3 AL.ALfloat
-{-# INLINE v3ToVector #-}
-v3ToVector (V3 x y z) =
+_v3ToVector :: V3 Float -> AL.Vector3 AL.ALfloat
+{-# INLINE _v3ToVector #-}
+_v3ToVector (V3 x y z) =
     AL.Vector3 
         (realToFrac x) 
         (realToFrac y) 
@@ -336,9 +230,84 @@ v3ToVector (V3 x y z) =
 
 ------------------------------------------------------------
 -- | Number conversion thing.
-v2ToVectorPair :: V2 Float -> (AL.ALfloat, AL.ALfloat)
-{-# INLINE v2ToVectorPair #-}
-v2ToVectorPair (V2 a b) =
+_v2ToVectorPair :: V2 Float -> (AL.ALfloat, AL.ALfloat)
+{-# INLINE _v2ToVectorPair #-}
+_v2ToVectorPair (V2 a b) =
     ( realToFrac a
     , realToFrac b
     )
+
+{-
+    case exprDiff (toExpr s0) (toExpr s1) of
+        Cpy a -> 
+           case a of
+                EditRec constructorName omap          -> mapM_ handleField (toList omap)
+  where
+    handleField = \case
+        ("soundscapeSources" , expr) -> handleSources  expr
+        ("soundscapeListener", expr) -> handleListener expr
+        ____________________________ -> pure ()
+
+    handleSources = \case-- error . show $ prettyEditExpr a-- \case
+        Cpy a   -> 
+           case a of
+                EditApp "Map.fromList"  editEditExprs -> mapM_ handleSource editEditExprs
+
+    handleSource = \case
+        Cpy a   -> 
+           case a of
+                --EditApp constructorName  editEditExprs -> error . show $ editEditExprs
+                EditLst editEditExprs	               -> mapM_ handleSourceFields editEditExprs
+      where
+        handleSourceFields = \case
+            Cpy a   ->
+                case a of
+                    EditApp cn xs -> error "editApp"
+                    EditExp expr -> pure ()
+            Ins a -> 
+                case a of
+                    EditExp expr ->
+                        case expr of
+                            App _ xs -> 
+                                forM_ xs \case
+                                    App _ _ -> pure ()
+                                    Rec constructorName fields -> mapM_ (handleField a) (toList fields)
+          where
+            handleField sid = \case
+                ("sourceID"            , expr) -> pure ()
+                ("sourcePosition"      , expr) -> AL.sourcePosition (unsafeCoerce 0) $= (AL.Vertex3 0 0 0)
+                ("sourceVelocity"      , expr) -> AL.sourceVelocity (unsafeCoerce 0) $= (AL.Vertex3 0 0 0)
+                ("sourceGain"          , expr) -> AL.sourceGain (unsafeCoerce 0) $= (AL.Vertex3 0 0 0)
+                ("sourcePitch"         , expr) -> pure ()
+                ("sourceDirection"     , expr) -> pure ()
+                ("sourceConeAngles"    , expr) -> pure ()
+                ("sourceConeOuterGain" , expr) -> pure ()
+                ("sourceState"         , expr) -> pure ()
+                ("sourceRelative"      , expr) -> pure ()
+            
+    handleListener = \case
+        _ -> do
+            let Listener{..} = soundscapeListener s1           
+            let (vA,vB) = listenerOrientation
+            AL.orientation      $= (_v3ToVector vA, _v3ToVector vB)
+            AL.listenerPosition $= _v3ToVertex vA
+            AL.listenerVelocity $= _v3ToVector vA
+            AL.listenerGain     $= _realToFrac listenerGain
+-----------------------------------------------------------
+--data SourceState
+--    = Initial
+----    | Playing
+--    | Paused
+--    | Stopped
+--  deriving
+--    (Eq, Show, Generic, ToExpr)
+
+
+-----------------------------------------------------------
+--data SourceRelative 
+--    = RelativeToListener 
+----    | RelativeToWorld
+--  deriving
+--    (Eq, Show, Generic, ToExpr)
+-}
+

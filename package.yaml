@@ -17,6 +17,7 @@ dependencies:
 - StateVar
 - containers
 - ObjectName
+- tree-diff
 
 ghc-options:
 - -Wall
