@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BlockArguments #-}
 -- | No supporte for Capture.
@@ -15,10 +16,12 @@ module FRP.Yampa.OpenAL
 
     -- *
     , runSoundscape
+    , withALUT
     , AL.runALUT
     )
 where
 
+import qualified Data.ObjectName as ObjectName
 import qualified Sound.OpenAL.AL.Listener as AL
 import qualified Sound.OpenAL.AL.Attenuation as AL
 import qualified Sound.ALUT.Initialization as AL
@@ -32,6 +35,13 @@ import Data.StateVar
 import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.IORef
+import Data.Maybe
+import System.CPUTime
+
+
+-------------------------------------------------------------------------------
+-- PUBLIC ---------------------------------------------------------------------
+-------------------------------------------------------------------------------
 
 
 -----------------------------------------------------------
@@ -68,6 +78,7 @@ data Source = Source
     , sourceGain              :: !Float
     , sourceGainBounds        :: !(Float, Float)
     , sourcePitch             :: !Float
+    , sourceOffset            :: !(Maybe (Float,Float))
     , sourceDirection         :: !(V3 Float)
     , sourceConeAngles        :: !(Float, Float) -- Outer cone, inner cone, in degrees.
     , sourceConeOuterGain     :: !Float          -- Gain on the outer cone
@@ -121,6 +132,7 @@ source sd =
         , sourceGain              = 1
         , sourceGainBounds        = (0,1)
         , sourcePitch             = 1
+        , sourceOffset            = Nothing
         , sourceDirection         = V3 0 0 0
         , sourceConeAngles        = (360,360)
         , sourceConeOuterGain     = 1
@@ -133,16 +145,14 @@ source sd =
         }
 
 
---withALUT :: (ALApp -> IO a) -> IO a 
---withALUT k = do
---    AL.runALUT "testing-yampa-alut" [] \x y -> do
---       k alApp
-data ALApp = ALApp 
-    { alutInitiated :: Bool
-    , stateRef      :: IORef () 
-    -- TODO we need bookkeeping for the sources
-    --      and we need a chace or middleware for the buffers
-    }
+-----------------------------------------------------------
+withALUT :: (ALApp -> IO a) -> IO a 
+withALUT k = do
+    AL.runALUT "Yampa-OpenAL" [] \_name _arguments -> do
+       buffers <- newIORef mempty
+       sources <- newIORef mempty
+       dtime   <- newIORef 0
+       k (ALApp buffers sources dtime)
 
 
 -----------------------------------------------------------
@@ -150,50 +160,75 @@ data ALApp = ALApp
 runSoundscape :: ALApp -> Soundscape -> IO ()
 {-# INLINEABLE runSoundscape #-}
 runSoundscape alApp s1 = do
+    sources <- readIORef (alAppSources alApp)
+    buffers <- readIORef (alAppBuffers alApp)
+    t0      <- readIORef (alAppDTime   alApp)
+    t1      <- getCPUTime
+    _______ <- writeIORef (alAppDTime alApp) t1
+     -- note: may be parallelizable
+    forM_ (Map.toList (soundscapeSources s1)) \(isid, source_) -> do
+        case Map.lookup isid sources of
+           -- creates source
+           Nothing -> do
+               sourcex <- ObjectName.genObjectName
+               bufferx <- AL.createBuffer (sourceSoundData source_)
+               _______ <- AL.buffer sourcex $= Just bufferx
+               _______ <- modifyIORef (alAppSources alApp) (Map.insert isid sourcex)
+               _______ <- modifyIORef (alAppBuffers alApp) (Map.insert isid (sourceSoundData source_))
+               return ()
+           -- source already created
+           Just sid -> do
+                if sourceSoundData source_ == fromJust (Map.lookup isid buffers) 
+                    -- sounddata is the same
+                    then do
+                        AL.sourcePosition    sid $= _v3ToVertex (sourcePosition source_)
+                        AL.sourceVelocity    sid $= _v3ToVector (sourceVelocity source_)
+                        AL.pitch             sid $= realToFrac (sourcePitch source_)
+                        AL.sourceGain        sid $= realToFrac (sourceGain  source_)
+                        AL.gainBounds        sid $= (realToFrac (fst (sourceGainBounds source_)), realToFrac (snd (sourceGainBounds source_)))
+                        AL.direction         sid $= _v3ToVector (sourceDirection source_)
+                        AL.sourceRelative    sid $= sourceRelative source_
+                        AL.rolloffFactor     sid $= realToFrac (sourceRolloffFactor source_)
+                        AL.referenceDistance sid $= realToFrac (sourceReferenceDistance source_)
+                        AL.maxDistance       sid $= realToFrac (sourceMaxDistance source_)
+                        AL.coneAngles        sid $= (realToFrac $ fst $ sourceConeAngles source_, realToFrac $ snd (sourceConeAngles source_))
+                        AL.coneOuterGain     sid $= realToFrac (sourceConeOuterGain source_)
+                        case sourceOffset source_ of
+                            Nothing        -> pure ()
+                            Just (l,of1) -> do
+                                of0 <- case AL.secOffset sid of StateVar g _ -> g
+                                when (l > (1/3) && abs (of1 - realToFrac of0) > 0.1) (AL.secOffset sid $= realToFrac (of1 + 0.05))
+                        current <- AL.sourceState sid
+                        case (sourceState source_, current) of
+                            (AL.Playing, AL.Playing) -> pure ()
+                            (AL.Stopped, AL.Stopped) -> pure ()
+                            (AL.Initial, AL.Initial) -> pure ()
+                            (AL.Paused , AL.Playing) -> AL.pause [sid]
+                            (AL.Playing, __________) -> AL.play [sid]
+                            (AL.Stopped, __________) -> AL.stop [sid]
+                            (AL.Initial, __________) -> AL.stop [sid]
+                            (AL.Paused , __________) -> pure ()
+                    -- sounddata changed, create new buffer
+                    else do
+                        AL.stop [sid]
+                        bufferx <- AL.createBuffer (sourceSoundData source_)
+                        _xs <- AL.unqueueBuffers sid 1
+                        AL.buffer sid $= Just bufferx
+                        modifyIORef (alAppBuffers alApp) (Map.insert isid (sourceSoundData source_))
     let Listener{..} = soundscapeListener s1           
     let (vA,vB) = listenerOrientation
+    AL.dopplerFactor    $= realToFrac (soundscapeDopplerFactor s1)
+    AL.speedOfSound     $= realToFrac (soundscapeSpeedOfSound s1)
+    AL.distanceModel    $= soundscapeDistanceModel s1
     AL.orientation      $= (_v3ToVector vA, _v3ToVector vB)
     AL.listenerPosition $= _v3ToVertex vA
     AL.listenerVelocity $= _v3ToVector vA
     AL.listenerGain     $= realToFrac listenerGain
 
-    -- TODO
-    let getSourceFromID = undefined alApp -- TODO
 
-    forM_ (Map.toList (soundscapeSources s1)) \(isid, source_) -> do -- note: may be parallelizable
-        let sid = getSourceFromID isid
-        AL.sourcePosition sid $= _v3ToVertex (sourcePosition source_)
-        AL.sourceVelocity sid $= _v3ToVector (sourceVelocity source_)
-        AL.pitch          sid $= realToFrac (sourcePitch source_)
-        AL.sourceGain     sid $= realToFrac (sourceGain  source_)
-        --, sourceGainBounds        :: !(Float, Float)
-        AL.direction      sid $= _v3ToVector (sourceDirection source_)
-        AL.sourceRelative sid $= sourceRelative source_
-        --, sourceRolloffFactor     :: !Float
-        --, sourceReferenceDistance :: !Float
-        --, sourceMaxDistance       :: !Float
-        AL.coneAngles     sid $= (realToFrac $ fst $ sourceConeAngles source_, realToFrac $ snd (sourceConeAngles source_))
-        AL.coneOuterGain  sid $= realToFrac (sourceConeOuterGain source_)
-    -- sourceSoundData         :: !(AL.SoundDataSource ())
-        -- TODO data
-            -- client stuff
-        -- TODO we need to solve this in here
-        --helloSource <- ObjectName.genObjectName
-        --bufferDS    <- AL.createBuffer AL.HelloWorld
-        --()          <- AL.buffer helloSource StateVar.$= Just bufferDS
-        current <- AL.sourceState sid
-        case (sourceState source_, current) of
-            (AL.Playing, AL.Playing) -> pure ()
-            (AL.Playing, __________) -> AL.play [sid]
-            (AL.Stopped, AL.Stopped) -> pure ()
-            (AL.Stopped, __________) -> AL.stop [sid]
-            (AL.Initial, AL.Initial) -> pure ()
-            (AL.Initial, __________) -> AL.stop [sid]
-            (AL.Paused , AL.Playing) -> AL.pause [sid]
-            (AL.Paused , __________) -> pure ()
-    AL.dopplerFactor    $= realToFrac (soundscapeDopplerFactor s1)
-    AL.speedOfSound     $= realToFrac (soundscapeSpeedOfSound s1)
-    AL.distanceModel    $= soundscapeDistanceModel s1
+-------------------------------------------------------------------------------
+-- INTERNAL / HELPERS ---------------------------------------------------------
+-------------------------------------------------------------------------------
 
 
 ------------------------------------------------------------
@@ -226,3 +261,14 @@ _v2ToVectorPair (V2 a b) =
     ( realToFrac a
     , realToFrac b
     )
+
+
+-----------------------------------------------------------
+-- Internal.
+data ALApp = ALApp 
+    { alAppBuffers :: IORef (Map Int (AL.SoundDataSource ()))
+    , alAppSources :: IORef (Map Int AL.Source)
+    , alAppDTime   :: IORef Integer -- in seconds
+    }
+
+
