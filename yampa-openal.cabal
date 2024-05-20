@@ -35,6 +35,7 @@ library
     , OpenAL
     , StateVar
     , Yampa
+    , async
     , base >=4.7 && <5
     , containers
     , linear
@@ -57,6 +58,7 @@ test-suite yampa-alut-test
     , OpenAL
     , StateVar
     , Yampa
+    , async
     , base >=4.7 && <5
     , containers
     , linear

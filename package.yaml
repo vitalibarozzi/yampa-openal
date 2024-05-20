@@ -18,6 +18,7 @@ dependencies:
 - containers
 - ObjectName
 - tree-diff
+- async
 
 ghc-options:
 - -Wall

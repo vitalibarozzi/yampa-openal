@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BlockArguments #-}
@@ -21,8 +22,10 @@ module FRP.Yampa.OpenAL
     )
 where
 
+import Control.Exception
 import qualified Data.ObjectName as ObjectName
 import qualified Sound.OpenAL.AL.Listener as AL
+import qualified Sound.OpenAL.AL.Errors as AL
 import qualified Sound.OpenAL.AL.Attenuation as AL
 import qualified Sound.ALUT.Initialization as AL
 import qualified Sound.ALUT.Loaders as AL
@@ -37,6 +40,7 @@ import Data.Map (Map)
 import Data.IORef
 import Data.Maybe
 import System.CPUTime
+import Control.Concurrent.Async
 
 
 -------------------------------------------------------------------------------
@@ -160,70 +164,80 @@ withALUT k = do
 runSoundscape :: ALApp -> Soundscape -> IO ()
 {-# INLINEABLE runSoundscape #-}
 runSoundscape alApp s1 = do
+
+    errors <- AL.alErrors
+    when (not (null errors)) (print $ (errors,s1))
+
     sources <- readIORef (alAppSources alApp)
     buffers <- readIORef (alAppBuffers alApp)
-    t0      <- readIORef (alAppDTime   alApp)
-    t1      <- getCPUTime
-    _______ <- writeIORef (alAppDTime alApp) t1
-     -- note: may be parallelizable
-    forM_ (Map.toList (soundscapeSources s1)) \(isid, source_) -> do
-        case Map.lookup isid sources of
-           -- creates source
-           Nothing -> do
-               sourcex <- ObjectName.genObjectName
-               bufferx <- AL.createBuffer (sourceSoundData source_)
-               _______ <- AL.buffer sourcex $= Just bufferx
-               _______ <- modifyIORef (alAppSources alApp) (Map.insert isid sourcex)
-               _______ <- modifyIORef (alAppBuffers alApp) (Map.insert isid (sourceSoundData source_))
-               return ()
-           -- source already created
-           Just sid -> do
-                if sourceSoundData source_ == fromJust (Map.lookup isid buffers) 
-                    -- sounddata is the same
-                    then do
-                        AL.sourcePosition    sid $= _v3ToVertex (sourcePosition source_)
-                        AL.sourceVelocity    sid $= _v3ToVector (sourceVelocity source_)
-                        AL.pitch             sid $= realToFrac (sourcePitch source_)
-                        AL.sourceGain        sid $= realToFrac (sourceGain  source_)
-                        AL.gainBounds        sid $= (realToFrac (fst (sourceGainBounds source_)), realToFrac (snd (sourceGainBounds source_)))
-                        AL.direction         sid $= _v3ToVector (sourceDirection source_)
-                        AL.sourceRelative    sid $= sourceRelative source_
-                        AL.rolloffFactor     sid $= realToFrac (sourceRolloffFactor source_)
-                        AL.referenceDistance sid $= realToFrac (sourceReferenceDistance source_)
-                        AL.maxDistance       sid $= realToFrac (sourceMaxDistance source_)
-                        AL.coneAngles        sid $= (realToFrac $ fst $ sourceConeAngles source_, realToFrac $ snd (sourceConeAngles source_))
-                        AL.coneOuterGain     sid $= realToFrac (sourceConeOuterGain source_)
-                        case sourceOffset source_ of
-                            Nothing        -> pure ()
-                            Just (l,of1) -> do
-                                of0 <- case AL.secOffset sid of StateVar g _ -> g
-                                when (l > (1/3) && abs (of1 - realToFrac of0) > 0.1) (AL.secOffset sid $= realToFrac (of1 + 0.05))
-                        current <- AL.sourceState sid
-                        case (sourceState source_, current) of
-                            (AL.Playing, AL.Playing) -> pure ()
-                            (AL.Stopped, AL.Stopped) -> pure ()
-                            (AL.Initial, AL.Initial) -> pure ()
-                            (AL.Paused , AL.Playing) -> AL.pause [sid]
-                            (AL.Playing, __________) -> AL.play [sid]
-                            (AL.Stopped, __________) -> AL.stop [sid]
-                            (AL.Initial, __________) -> AL.stop [sid]
-                            (AL.Paused , __________) -> pure ()
-                    -- sounddata changed, create new buffer
-                    else do
-                        AL.stop [sid]
-                        bufferx <- AL.createBuffer (sourceSoundData source_)
-                        _xs <- AL.unqueueBuffers sid 1
-                        AL.buffer sid $= Just bufferx
-                        modifyIORef (alAppBuffers alApp) (Map.insert isid (sourceSoundData source_))
-    let Listener{..} = soundscapeListener s1           
-    let (vA,vB) = listenerOrientation
-    AL.dopplerFactor    $= realToFrac (soundscapeDopplerFactor s1)
-    AL.speedOfSound     $= realToFrac (soundscapeSpeedOfSound s1)
-    AL.distanceModel    $= soundscapeDistanceModel s1
-    AL.orientation      $= (_v3ToVector vA, _v3ToVector vB)
-    AL.listenerPosition $= _v3ToVertex vA
-    AL.listenerVelocity $= _v3ToVector vA
-    AL.listenerGain     $= realToFrac listenerGain
+    let conc1 = 
+            forConcurrently_ (Map.toList (soundscapeSources s1)) \(isid, source_) -> do
+            --forM_ (Map.toList (soundscapeSources s1)) \(isid, source_) -> do
+                let sameSoundData = sourceSoundData source_ == fromJust (Map.lookup isid buffers)
+                case Map.lookup isid sources of
+                   -- creates source
+                   Nothing -> do
+                       sourcex <- ObjectName.genObjectName
+                       bufferx <- AL.createBuffer (sourceSoundData source_) -- TODO is failing here... hmm
+                       _______ <- AL.buffer sourcex $= Just bufferx
+                       _______ <- modifyIORef (alAppSources alApp) (Map.insert isid sourcex)
+                       _______ <- modifyIORef (alAppBuffers alApp) (Map.insert isid (sourceSoundData source_))
+                       return ()
+                   -- source already created
+                   Just sid -> do
+                        if sameSoundData
+                            -- sounddata is the same
+                            then do
+                                AL.sourcePosition    sid $= _v3ToVertex (sourcePosition source_)
+                                AL.sourceVelocity    sid $= _v3ToVector (sourceVelocity source_)
+                                AL.pitch             sid $= realToFrac (sourcePitch source_)
+                                AL.sourceGain        sid $= realToFrac (sourceGain  source_)
+                                AL.gainBounds        sid $= (realToFrac (fst (sourceGainBounds source_)), realToFrac (snd (sourceGainBounds source_)))
+                                AL.direction         sid $= _v3ToVector (sourceDirection source_)
+                                AL.sourceRelative    sid $= sourceRelative source_
+                                AL.rolloffFactor     sid $= realToFrac (sourceRolloffFactor source_)
+                                AL.referenceDistance sid $= realToFrac (sourceReferenceDistance source_)
+                                AL.maxDistance       sid $= realToFrac (sourceMaxDistance source_)
+                                AL.coneAngles        sid $= (realToFrac $ fst $ sourceConeAngles source_, realToFrac $ snd (sourceConeAngles source_))
+                                AL.coneOuterGain     sid $= realToFrac (sourceConeOuterGain source_)
+                                case sourceOffset source_ of
+                                    Nothing        -> pure ()
+                                    Just (l,of1) -> do
+                                        let clamp a = if a > realToFrac l then 0 else a
+                                        of0 <- case AL.secOffset sid of StateVar g _ -> g
+                                        when (l > (1/3) && abs (of1 - realToFrac of0) > 0.1) (AL.secOffset sid $= clamp (realToFrac (of1 + 0.05)))
+                                current <- AL.sourceState sid
+                                case (sourceState source_, current) of
+                                    (AL.Playing, AL.Playing) -> pure ()
+                                    (AL.Stopped, AL.Stopped) -> pure ()
+                                    (AL.Initial, AL.Initial) -> pure ()
+                                    (AL.Paused , AL.Playing) -> AL.pause [sid]
+                                    (AL.Playing, __________) -> AL.play [sid]
+                                    (AL.Stopped, __________) -> AL.stop [sid]
+                                    (AL.Initial, __________) -> AL.stop [sid]
+                                    (AL.Paused , __________) -> pure ()
+                            -- sounddata changed, create new buffer
+                            else do
+                                AL.stop [sid]
+                                bufferx <- AL.createBuffer (sourceSoundData source_)
+                                --_xs <- AL.unqueueBuffers sid 1
+                                AL.buffer sid $= Just bufferx
+                                modifyIORef (alAppBuffers alApp) (Map.insert isid (sourceSoundData source_))
+                                modifyIORef (alAppBuffers alApp) (Map.insert isid (sourceSoundData source_))
+    let conc2 =  do
+            void $ concurrently
+                (do
+                    AL.dopplerFactor    $= realToFrac (soundscapeDopplerFactor s1)
+                    AL.speedOfSound     $= realToFrac (soundscapeSpeedOfSound s1)
+                    AL.distanceModel    $= soundscapeDistanceModel s1)
+                (do
+                    let Listener{..} = soundscapeListener s1           
+                    let (vA,vB) = listenerOrientation
+                    AL.orientation      $= (_v3ToVector vA, _v3ToVector vB)
+                    AL.listenerPosition $= _v3ToVertex vA
+                    AL.listenerVelocity $= _v3ToVector vA
+                    AL.listenerGain     $= realToFrac listenerGain)
+    void (concurrently conc1 conc2)
 
 
 -------------------------------------------------------------------------------
