@@ -22,12 +22,14 @@ main = do
             m <- Yampa.noise stdGen -< ()
             zs <- Yampa.delay 0.5 [(0, rS 140)] -< [(0, hello t m)]
             ys <- Yampa.delay 1.0 [             ] -< [(222, sS t)]
-            xs <- Yampa.delay 2.0 [(111, rS 440)] -< []
+            xs <- Yampa.delay 2.0 [(111, rS 440)] -< [(111, zz (abs $ realToFrac t))]
             returnA -< soundscape { soundscapeSources = Map.fromList (zs<>ys<>xs) }
       forever do
-          threadDelay 50000
-          Yampa.react handle (0.05, Nothing)
+          --10hz
+          threadDelay 100000
+          Yampa.react handle (0.1, Nothing)
   where
-    hello d m = (source AL.HelloWorld     ) { sourcePitch = abs $ sin (realToFrac d+m)}
-    sS    d   = (source (AL.Sine 200 1 10))  { sourceOffset = Just (10, abs $ realToFrac d)}
-    rS     hz = source (AL.Sine hz  1 10)
+    hello d m = (source HelloWorld     ) { sourcePitch = abs $ sin (realToFrac d+m)}
+    sS    d   = (source (Impulse 240 2)) { sourcePitch = abs $ sin (realToFrac d), sourceOffset = Just (1, abs $ realToFrac d)}
+    rS     hz = source (Sine hz 10)
+    zz     t  = (source (Square 100 t)) { sourcePitch = abs $ sin $ t + (realToFrac $ round $ sin t) }
