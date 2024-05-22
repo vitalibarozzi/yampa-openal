@@ -24,37 +24,22 @@ module FRP.Yampa.OpenAL
     )
 where
 
-import qualified Data.ObjectName as ObjectName
-import qualified Sound.OpenAL.AL.Listener as AL
-import qualified Sound.OpenAL.AL.Errors as AL
-import qualified Sound.OpenAL.AL.Attenuation as AL
-import qualified Sound.ALUT.Loaders as ALUT
-import qualified Sound.ALUT.Initialization as ALUT
-import qualified Sound.ALUT.Sleep as ALUT
-import qualified Sound.OpenAL.AL.Source as AL
-import qualified Sound.OpenAL as AL
-import Linear.V2
-import Linear.V3
+import Control.Concurrent
+import Control.Concurrent.Async
 import Control.Monad
-import Data.StateVar
-import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.Maybe
-import Control.Concurrent.Async
-import Control.Concurrent.MVar
-import Control.Concurrent
+import Data.StateVar
 import Foreign.Ptr
-import Foreign.Marshal.Alloc
+import Linear.V2
+import Linear.V3
 import Unsafe.Coerce
+import qualified Data.Map as Map
+import qualified Data.ObjectName as ObjectName
+import qualified Sound.ALUT.Initialization as ALUT
+import qualified Sound.ALUT.Loaders as ALUT
+import qualified Sound.OpenAL as AL
 
-
-
-
--- TODO idea
--- uma funcao pra fazer DSP nos buffers
--- sera que seria rapido o suficiente pra ser quase rive?
---mapBuffer :: SF () Float -> AL.Buffer -> IO ()
---mapBuffer = undefined
 
 -------------------------------------------------------------------------------
 -- PUBLIC ---------------------------------------------------------------------
@@ -294,8 +279,8 @@ runSoundscape !alApp s1 = do
 -- Internal.
 data ALApp = ALApp 
     { alAppBuffers    :: !(MVar (Map DataSource AL.Buffer))
-    , alAppDataSource :: !(MVar (Map Int        DataSource))
-    , alAppSources    :: !(MVar (Map Int        AL.Source))
+    , alAppDataSource :: !(MVar (Map Int        DataSource)) -- TODO we have an id problem
+    , alAppSources    :: !(MVar (Map Int        AL.Source)) -- TODO we have an id problem
     }
 
 
@@ -380,3 +365,15 @@ dataLooping = \case
     Sawtooth {} -> AL.Looping   
     Impulse  {} -> AL.Looping   
 
+
+-----------------------------------------------------------
+-----------------------------------------------------------
+-----------------------------------------------------------
+-----------------------------------------------------------
+-----------------------------------------------------------
+
+
+--type Wave a = SF a DataSource
+
+--wave :: Wave -> Hz -> DataSource
+--wave = undefined

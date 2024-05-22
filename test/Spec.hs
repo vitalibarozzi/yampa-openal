@@ -1,43 +1,45 @@
 {-# LANGUAGE Arrows #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE BlockArguments #-}
 
-import FRP.Yampa.OpenAL
-import qualified Sound.ALUT.Loaders as AL
-import qualified FRP.Yampa as Yampa
-import FRP.Yampa (SF,Event(..),returnA,(<<<),arr)
 import Control.Concurrent
-import Control.Monad
-import qualified Data.Map as Map
-import System.Random
-import Debug.Trace
 import Control.Concurrent.Async
+import Control.Monad
+import FRP.Yampa
+import FRP.Yampa.OpenAL
+import qualified Data.Map as Map
+import qualified FRP.Yampa as Yampa
 
 
 main :: IO ()
 main = do
     withALUT \alApp -> do
-      stdGen <- getStdGen
-      handle <- Yampa.reactInit (pure 0) (\_ updated ss -> when updated (runSoundscape alApp ss) >> pure updated) $
-        proc _someState -> do
-            isTrue  <- arr ((> 0) . round @Float) <<< Yampa.noise stdGen -< ()
-            xs <-     Yampa.delay del [(100, rS 840)]
-                  <<< Yampa.delay del [] 
-                  <<< Yampa.delay del [(100, rS 940)]
-                  <<< Yampa.delay del [] 
-                  <<< Yampa.delay del [(100, rS 1040)]
-                  <<< Yampa.delay del []
-                  <<< Yampa.delay del [(100, rS 1120)]
-                  -< [(100, rS 840)]
-            --returnA -< soundscape { soundscapeSources = if isTrue then mempty else Map.fromList xs }
-            returnA -< soundscape { soundscapeSources = Map.fromList xs }
+      let tdelay = 16660
+      let dt = realToFrac tdelay / 1000000
+      handle <- Yampa.reactInit (pure 0) (\_ updated ss -> when updated (runSoundscape alApp ss) >> pure updated) sf
       forever do
           concurrently
               (threadDelay tdelay)
               (Yampa.react handle (dt, Nothing))
   where
-    tdelay = 16660
-    dt = realToFrac tdelay / 1000000
-    del = 0.1
-    rS     hz = (source (Sine hz 1)) { sourceGain = 0.5 }
-    fooss     = source (File "test/audio.wav" Nothing)
+    rS hz = (source (Sine hz 1)) { sourceGain = 0.4 }
+    fooss = source (File "test/audio.wav" Nothing)
+    sf = proc _ -> do
+        xs <- mkSrc <<< Yampa.time -< ()
+        returnA -< soundscape { soundscapeSources = Map.fromList xs }
+      where
+        id2 = 200
+        d   = 0.2
+        src1 = (100,)
+        mkSrc = arr 
+            \case t | t <= (0 * d) -> pure (src1 (rS 840))
+                    | t <= (1 * d) -> mempty
+                    | t <= (2 * d) -> pure (src1 (rS 940))
+                    | t <= (3 * d) -> mempty
+                    | t <= (4 * d) -> pure (src1 (rS 1040))
+                    | t <= (5 * d) -> mempty
+                    | t <= (6 * d) -> pure (src1 (rS 1120))
+                    | t <= (7 * d) -> mempty
+                    | t <= (8 * d) -> pure (id2, rS 840)
+                    | otherwise    -> pure (src1 fooss)
