@@ -1,4 +1,5 @@
 {-# LANGUAGE Arrows #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE BlockArguments #-}
 
 import FRP.Yampa.OpenAL
@@ -10,6 +11,7 @@ import Control.Monad
 import qualified Data.Map as Map
 import System.Random
 import Debug.Trace
+import Control.Concurrent.Async
 
 
 main :: IO ()
@@ -18,18 +20,24 @@ main = do
       stdGen <- getStdGen
       handle <- Yampa.reactInit (pure 0) (\_ updated ss -> when updated (runSoundscape alApp ss) >> pure updated) $
         proc _someState -> do
-            t <- Yampa.time         -< ()
-            m <- Yampa.noise stdGen -< ()
-            zs <- Yampa.delay 0.5 [(0, rS 140)] -< [(0, hello t m)]
-            ys <- Yampa.delay 1.0 [             ] -< [(222, sS t)]
-            xs <- Yampa.delay 2.0 [(111, rS 440)] -< [(111, zz (abs $ realToFrac t))]
-            returnA -< soundscape { soundscapeSources = Map.fromList (zs<>ys<>xs) }
+            isTrue  <- arr ((> 0) . round @Float) <<< Yampa.noise stdGen -< ()
+            xs <-     Yampa.delay del [(100, rS 840)]
+                  <<< Yampa.delay del [] 
+                  <<< Yampa.delay del [(100, rS 940)]
+                  <<< Yampa.delay del [] 
+                  <<< Yampa.delay del [(100, rS 1040)]
+                  <<< Yampa.delay del []
+                  <<< Yampa.delay del [(100, rS 1120)]
+                  -< [(100, rS 840)]
+            --returnA -< soundscape { soundscapeSources = if isTrue then mempty else Map.fromList xs }
+            returnA -< soundscape { soundscapeSources = Map.fromList xs }
       forever do
-          --10hz
-          threadDelay 100000
-          Yampa.react handle (0.1, Nothing)
+          concurrently
+              (threadDelay tdelay)
+              (Yampa.react handle (dt, Nothing))
   where
-    hello d m = (source HelloWorld     ) { sourcePitch = abs $ sin (realToFrac d+m)}
-    sS    d   = (source (Impulse 240 2)) { sourcePitch = abs $ sin (realToFrac d), sourceOffset = Just (1, abs $ realToFrac d)}
-    rS     hz = source (Sine hz 10)
-    zz     t  = (source (Square 100 t)) { sourcePitch = abs $ sin $ t + (realToFrac $ round $ sin t) }
+    tdelay = 16660
+    dt = realToFrac tdelay / 1000000
+    del = 0.1
+    rS     hz = (source (Sine hz 1)) { sourceGain = 0.5 }
+    fooss     = source (File "test/audio.wav" Nothing)
