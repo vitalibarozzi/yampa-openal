@@ -1,4 +1,6 @@
 .stack-work/
 test/*.wav
+test/audio.wav
 **/*.wav
+**/*.ogg
 *~

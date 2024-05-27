@@ -29,18 +29,36 @@ main = do
         let tdelay = 16660
         let dt = realToFrac tdelay / 1000000
         handle <- Yampa.reactInit (pure 0) (\_ updated ss -> when updated (runSoundscape alApp ss) >> pure updated) sf
-        timeout 7000000 $ forever do
-            concurrently
-                (threadDelay tdelay)
+        timeout 1000000 $ forever do
                 (Yampa.react handle (dt, Nothing))
-        timeout 5000000 $ forever do
-            concurrently
                 (threadDelay tdelay)
+        timeout 1000000 $ forever do
+                (Yampa.react handle (dt, Nothing))
+                (threadDelay tdelay)
+        timeout 1000000 $ forever do
                 (Yampa.react handle (negate dt, Nothing))
-        timeout 7000000 $ forever do
-            concurrently
                 (threadDelay tdelay)
+        timeout 1000000 $ forever do
                 (Yampa.react handle (dt, Nothing))
+                (threadDelay tdelay)
+        timeout 1000000 $ forever do
+                (Yampa.react handle (negate dt, Nothing))
+                (threadDelay tdelay)
+        timeout 1000000 $ forever do
+                (Yampa.react handle (dt, Nothing))
+                (threadDelay tdelay)
+        timeout 1000000 $ forever do
+                (Yampa.react handle (negate dt, Nothing))
+                (threadDelay tdelay)
+        timeout 1000000 $ forever do
+                (Yampa.react handle (dt, Nothing))
+                (threadDelay tdelay)
+        timeout 1000000 $ forever do
+                (Yampa.react handle (negate dt, Nothing))
+                (threadDelay tdelay)
+        forever do
+                (Yampa.react handle (dt, Nothing))
+                (threadDelay tdelay)
         pure ()
   where
     rS hz = source (Sine hz 1)
@@ -48,7 +66,7 @@ main = do
         -- x <- second (phaser 0.5 30) <<< second (tremolo 0.5 60) <<< arr head <<< mkSrc <<< Yampa.time -< ()
         -- x <- second (phaser 0.2 1) <<< arr head <<< mkSrc <<< Yampa.time -< ()
         -- z <- source (HelloWorld) -< ()
-        z <- source (File "test/audio.wav") -< ()
+        z <- source (File "test/audio.wav" (0, 137) 0) -< ()
         x <- tremolo 0.2 60 <<< source Silence -< () -- (File "test/audio.wav") -< ()
         t <- Yampa.time -< ()
         case t of

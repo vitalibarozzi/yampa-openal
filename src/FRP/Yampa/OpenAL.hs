@@ -44,6 +44,7 @@ import qualified Sound.ALUT.Initialization as ALUT
 import qualified Sound.ALUT.Loaders as ALUT
 import qualified Sound.OpenAL as AL
 import Unsafe.Coerce
+import Debug.Trace
 
 -------------------------------------------------------------------------------
 -- PUBLIC ---------------------------------------------------------------------
@@ -94,7 +95,6 @@ data Source = Source
     , sourceGainBounds :: !(Float, Float) -- TODO maybe this shouldnt be exposed or should be a function instead
     , sourcePitch :: !Double
     , sourceSoundData :: !DataSource
-    , sourceOffset :: !(Maybe Double)
     }
     deriving
         (Eq, Show)
@@ -109,11 +109,20 @@ data DataSource
     | Sawtooth !Hz !Phase
     | Impulse !Hz !Phase
     | Memory !(Ptr ()) !Int !(Maybe Seconds)
-    | File !FilePath
+    | File !FilePath Range Timecode
     -- TODO | Signal Hz (SF () Float) -- lazily creates buffer as needed
 
     deriving
         (Eq, Show, Ord)
+
+
+-----------------------------------------------------------
+type Range = (Timecode, Timecode)
+
+
+-----------------------------------------------------------
+type Timecode = Float
+
 
 -----------------------------------------------------------
 
@@ -147,14 +156,11 @@ listener =
 
 -- | Constructor.
 source :: DataSource -> SF a Source
-source sd = proc a -> do
-    t <- Yampa.time -< a
-    offset <-
-        returnA
-            -< case sd of
-                File ____ -> Just t
-                Memory{} -> Just t
-                _________ -> Nothing
+source msd = proc _ -> do
+    offset <- Yampa.time -< ()
+    sd <- returnA -< case msd of
+                File path range initialOffset -> File path range (initialOffset + realToFrac offset)
+                _____________________________ -> msd
     returnA
         -<
             Source
@@ -171,7 +177,6 @@ source sd = proc a -> do
                 , sourceReferenceDistance = 1
                 , sourceMaxDistance = 10000
                 , sourceSoundData = sd
-                , sourceOffset = offset
                 }
 
 -----------------------------------------------------------
@@ -186,13 +191,12 @@ withALUT !k = do
         k (ALApp buffers dataSrc sources)
   where
     runErrors = do
-        threadDelay 1010101
+        threadDelay 5010101
         !errors <- AL.alErrors
         unless (null errors) (print errors)
 
 -----------------------------------------------------------
 
--- | Assumes ALUT was already started.
 runSoundscape :: ALApp -> Soundscape -> IO ()
 {-# INLINEABLE runSoundscape #-}
 runSoundscape !alApp s1 = do
@@ -217,77 +221,80 @@ runSoundscape !alApp s1 = do
         !buffers <- readMVar (alAppBuffers alApp)
         ________ <- freeDeadSources (soundscapeSources s1) sources
         forConcurrently_ (Map.toList (soundscapeSources s1)) \(!isid, !source_) -> do
-            let sameSoundData = Just (sourceSoundData source_) == Map.lookup isid dataSrcs
             case Map.lookup isid sources of
-                -- creates source
-                Nothing -> do
-                    case dataConvert (sourceSoundData source_) of
-                        Nothing -> pure ()
-                        Just !csource -> do
-                            (size,bufferx) <- case Map.lookup (sourceSoundData source_) buffers of
-                                Nothing -> do
-                                    buffer <- ALUT.createBuffer csource
-                                    return (sizeOf buffer, buffer)
-                                Just (size, bufferx) -> return (size,bufferx)
-                            !sourcex <- ObjectName.genObjectName
-                            ________ <- AL.buffer sourcex $= Just bufferx
-                            ________ <- AL.loopingMode sourcex $= dataLooping (sourceSoundData source_)
-                            ________ <- AL.play [sourcex]
-                            ________ <- modifyMVar_ (alAppSources alApp) (pure . Map.insert isid sourcex)
-                            ________ <- modifyMVar_ (alAppBuffers alApp) (pure . Map.insert (sourceSoundData source_) (size, bufferx))
-                            ________ <- modifyMVar_ (alAppDataSource alApp) (pure . Map.insert isid (sourceSoundData source_))
-                            return ()
-                -- source already created
+                Nothing -> withNewSource buffers isid source_
                 Just !sid -> do
-                    if sameSoundData
-                        then -- sounddata is the same
-                        do
-                            AL.sourcePosition sid $= _v3ToVertex (sourcePosition source_)
-                            AL.sourceVelocity sid $= _v3ToVector (sourceVelocity source_)
-                            AL.pitch sid $= realToFrac (sourcePitch source_)
-                            AL.sourceGain sid $= realToFrac (sourceGain source_)
-                            AL.gainBounds sid $= (realToFrac (fst (sourceGainBounds source_)), realToFrac (snd (sourceGainBounds source_)))
-                            AL.direction sid $= _v3ToVector (sourceDirection source_)
-                            AL.sourceRelative sid $= sourceRelative source_
-                            AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor source_)
-                            AL.referenceDistance sid $= realToFrac (sourceReferenceDistance source_)
-                            AL.maxDistance sid $= realToFrac (sourceMaxDistance source_)
-                            AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles source_, realToFrac $ snd (sourceConeAngles source_))
-                            AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain source_)
-                            case sourceOffset source_ of
-                                Nothing -> pure ()
-                                Just offset -> do
-                                    bufferSize <- case Map.lookup (sourceSoundData source_) buffers of
-                                                       Nothing -> return 0
-                                                       Just (size,buff) -> return size
-                                    -- TODO if offset < 0 || offset > (realToFrac bufferSize)
-                                    if offset < 0
-                                        then AL.stop [sid]
-                                        else do
-                                            if offset == 0
-                                                then AL.play [sid]
-                                                else do
-                                                    offset0 <- case AL.secOffset sid of StateVar get set -> get
-                                                    let diff = offset - realToFrac offset0
-                                                    if offset > realToFrac offset0 && abs diff > 0.1
-                                                        then do
-                                                            AL.secOffset sid $= realToFrac offset
-                                                            AL.play [sid]
-                                                        else
-                                                            if offset < realToFrac offset0 && abs diff > 0.1
-                                                                then pure ()
-                                                                else AL.secOffset sid $= realToFrac offset
-                        else -- sounddata changed, create new buffer
-                        do
-                            AL.stop [sid]
-                            case dataConvert (sourceSoundData source_) of
-                                Nothing -> pure ()
-                                Just !csource -> do
-                                    !bufferx <- ALUT.createBuffer csource
-                                    AL.buffer sid $= Just bufferx
-                                    AL.play [sid]
-                                    modifyMVar_ (alAppDataSource alApp) (pure . Map.insert isid (sourceSoundData source_))
-                                    modifyMVar_ (alAppBuffers alApp) (pure . Map.insert (sourceSoundData source_) (sizeOf bufferx,bufferx))
+                    case sourceSoundData source_ of
+                        File path0 range0 _ -> do
+                            case Map.lookup isid dataSrcs of
+                                Just (File path1 range1 _) -> do
+                                   if path1 == path0 && range1 == range0
+                                       then sameSoundData_ sid source_
+                                       else soundDataChanged isid sid source_
+                                Nothing -> undefined
+                        _ -> do
+                            if Just (sourceSoundData source_) == Map.lookup isid dataSrcs
+                                then sameSoundData_ sid source_
+                                else soundDataChanged isid sid source_
+
+    withNewSource buffers isid source_ = do
+        case dataConvert (sourceSoundData source_) of
+            Nothing -> pure ()
+            Just !csource -> do
+                bufferx <- case Map.lookup (sourceSoundData source_) buffers of
+                    Nothing -> ALUT.createBuffer csource
+                    Just bufferx -> return bufferx
+                !sourcex <- ObjectName.genObjectName
+                ________ <- AL.buffer sourcex $= Just bufferx
+                ________ <- AL.loopingMode sourcex $= dataLooping (sourceSoundData source_)
+                ________ <- AL.play [sourcex]
+                ________ <- modifyMVar_ (alAppSources alApp) (pure . Map.insert isid sourcex)
+                --________ <- putMVar (alAppBuffers alApp) (Map.insert (sourceSoundData source_) bufferx buffers)
+                ________ <- modifyMVar_ (alAppBuffers alApp) (pure . Map.insert (sourceSoundData source_) bufferx)
+                ________ <- modifyMVar_ (alAppDataSource alApp) (pure . Map.insert isid (sourceSoundData source_))
+                return ()
+
+    soundDataChanged isid sid source_ = do
+        AL.stop [sid]
+        case dataConvert (sourceSoundData source_) of
+            Nothing -> pure ()
+            Just !csource -> do
+                !bufferx <- ALUT.createBuffer csource
+                AL.buffer sid $= Just bufferx
+                AL.play [sid]
+                modifyMVar_ (alAppDataSource alApp) (pure . Map.insert isid (sourceSoundData source_))
+                modifyMVar_ (alAppBuffers alApp) (pure . Map.insert (sourceSoundData source_) bufferx)
+
+    sameSoundData_  sid source_ = do
+        case sourceSoundData source_ of
+            File _ (minOffset, maxOffset) offset
+                | offset <  minOffset -> AL.stop [sid]
+                | offset == minOffset -> AL.play [sid]
+                | otherwise -> do
+                    if offset >= maxOffset
+                        then AL.stop [sid]
+                        else do
+                            updateRest sid source_
+                            offsetSec0 <- realToFrac <$> get (AL.secOffset sid)
+                            if abs (offset - offsetSec0) > (maxOffset/100) || abs (offset - offsetSec0) > 5
+                                then AL.secOffset sid $= realToFrac offset
+                                else when (abs (offset - offsetSec0) > (maxOffset/200))
+                                          (AL.secOffset sid $= realToFrac (offset + offsetSec0) / 2)
+            _ -> pure ()
+
+    updateRest sid source_ =  do
+        AL.sourcePosition sid $= _v3ToVertex (sourcePosition source_)
+        AL.sourceVelocity sid $= _v3ToVector (sourceVelocity source_)
+        AL.sourceGain sid $= realToFrac (sourceGain source_)
+        AL.gainBounds sid $= (realToFrac (fst (sourceGainBounds source_)), realToFrac (snd (sourceGainBounds source_)))
+        AL.direction sid $= _v3ToVector (sourceDirection source_)
+        AL.sourceRelative sid $= sourceRelative source_
+        AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor source_)
+        AL.referenceDistance sid $= realToFrac (sourceReferenceDistance source_)
+        AL.maxDistance sid $= realToFrac (sourceMaxDistance source_)
+        AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles source_, realToFrac $ snd (sourceConeAngles source_))
+        AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain source_)
+        AL.pitch sid $= realToFrac (sourcePitch source_)
 
     freeDeadSources :: Map Int Source -> Map Int AL.Source -> IO ()
     freeDeadSources a b = do
@@ -296,6 +303,46 @@ runSoundscape !alApp s1 = do
         let isAlive = zip before ((`elem` after_) <$> before)
         let deadOnes = mapMaybe (flip Map.lookup b . fst) (filter (not . snd) isAlive)
         AL.stop deadOnes
+
+
+                                            {-
+        AL.sourcePosition sid $= _v3ToVertex (sourcePosition source_)
+        AL.sourceVelocity sid $= _v3ToVector (sourceVelocity source_)
+        AL.pitch sid $= realToFrac (sourcePitch source_)
+        AL.sourceGain sid $= realToFrac (sourceGain source_)
+        AL.gainBounds sid $= (realToFrac (fst (sourceGainBounds source_)), realToFrac (snd (sourceGainBounds source_)))
+        AL.direction sid $= _v3ToVector (sourceDirection source_)
+        AL.sourceRelative sid $= sourceRelative source_
+        AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor source_)
+        AL.referenceDistance sid $= realToFrac (sourceReferenceDistance source_)
+        AL.maxDistance sid $= realToFrac (sourceMaxDistance source_)
+        AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles source_, realToFrac $ snd (sourceConeAngles source_))
+        AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain source_)
+        case sourceOffset source_ of
+            Nothing -> pure ()
+            Just offset -> do
+                bufferSize <- case Map.lookup (sourceSoundData source_) buffers of
+                                   Nothing -> return 0
+                                   Just buff -> return (sizeOf buff)
+                currentO <- get (AL.byteOffset sid)
+                if offset < 0
+                    then AL.stop [sid] >> return (traceShow (currentO, bufferSize) ())
+                    else do
+                        if offset == 0
+                            then AL.play [sid]
+                            else do
+                                offset0 <- case AL.secOffset sid of StateVar get set -> get
+                                let diff = offset - realToFrac offset0
+                                if offset > realToFrac offset0 && abs diff > 0.1
+                                    then do
+                                        AL.secOffset sid $= realToFrac offset
+                                        AL.play [sid]
+                                    else
+                                        if offset < realToFrac offset0 && abs diff > 0.1
+                                            then pure ()
+                                            else AL.secOffset sid $= realToFrac offset
+        -}
+
 
 -------------------------------------------------------------------------------
 -- LISTENER EFFECTS ------------------------------------------------------
@@ -354,74 +401,6 @@ phaser (abs -> depth) (abs -> hz) = proc s -> do
     deltaPitch <- arr (sin . (* hz)) <<< Yampa.time -< s
     returnA -< s{sourcePitch = abs (sourcePitch s + (deltaPitch * depth))}
 
------------------------------------------------------------
--- rotary ?
-
--------------------------------------------------------------------------------
--- EXTENSION SOURCE EFFECTS ---------------------------------------------------
--------------------------------------------------------------------------------
-
-reverb :: Int -> SF Source Source
-reverb = undefined
-
-{-
-"AL_EXT_ALAW"
-"AL_EXT_BFORMAT"
-"AL_EXT_DOUBLE"
-"AL_EXT_EXPONENT_DISTANCE"
-"AL_EXT_FLOAT32"
-"AL_EXT_IMA4"
-"AL_EXT_LINEAR_DISTANCE"
-"AL_EXT_MCFORMATS"
-"AL_EXT_MULAW"
-"AL_EXT_MULAW_BFORMAT"
-"AL_EXT_MULAW_MCFORMATS"
-"AL_EXT_OFFSET"
-"AL_EXT_SOURCE_RADIUS" <----------- nice
-"AL_EXT_STATIC_BUFFER"
-"AL_EXT_source_distance_model"
-
-"AL_SOFTX_convolution_reverb" <------ nice
-"AL_SOFTX_hold_on_disconnect"
-"AL_SOFTX_map_buffer" <------ nice
-
-"AL_SOFT_MSADPCM"
-
-"AL_SOFT_UHJ"
-"AL_SOFT_UHJ_ex"
-
-"AL_SOFT_callback_buffer"
-"AL_SOFT_deferred_updates"
-"AL_SOFT_direct_channels"
-"AL_SOFT_direct_channels_remix"
-"AL_SOFT_effect_target" <------ ?
-"AL_SOFT_events"
-"AL_SOFT_gain_clamp_ex"
-"AL_SOFT_loop_points" <------ ?
-"AL_SOFT_source_latency" <------ ?
-"AL_SOFT_source_length" <------ ?
-"AL_SOFT_source_resampler" <------ ?
-"AL_SOFT_source_spatialize" <------ ?
-"AL_SOFT_source_start_delay" <------ nice
-
-"ALC_ENUMERATE_ALL_EXT"
-"ALC_ENUMERATION_EXT"
-
-"ALC_EXT_CAPTURE"
-"ALC_EXT_DEDICATED"
-"ALC_EXT_EFX"
-"ALC_EXT_disconnect"
-"ALC_EXT_thread_local_context"
-
-"ALC_SOFT_HRTF"
-"ALC_SOFT_device_clock"
-"ALC_SOFT_loopback"
-"ALC_SOFT_loopback_bformat"
-"ALC_SOFT_output_limiter"
-"ALC_SOFT_output_mode"
-"ALC_SOFT_pause_device"
--}
-
 -------------------------------------------------------------------------------
 -- INTERNAL / HELPERS ---------------------------------------------------------
 -------------------------------------------------------------------------------
@@ -429,8 +408,8 @@ reverb = undefined
 -----------------------------------------------------------
 -- Internal.
 data ALApp = ALApp
-    { alAppBuffers :: !(MVar (Map DataSource (Int,AL.Buffer)))
-    , alAppDataSource :: !(MVar (Map Int DataSource)) -- TODO we have an id problem
+    { alAppBuffers :: !(MVar (Map DataSource AL.Buffer))
+    , alAppDataSource :: !(MVar (Map Int DataSource)) -- TODO we have an id problem. (which problem?)
     , alAppSources :: !(MVar (Map Int AL.Source)) -- TODO we have an id problem
     }
 
@@ -489,7 +468,7 @@ dataConvert :: DataSource -> Maybe (ALUT.SoundDataSource a)
 {-# INLINE dataConvert #-}
 dataConvert = \case
     Silence -> Nothing
-    File filePath -> Just (ALUT.File filePath)
+    File filePath _ _ -> Just (ALUT.File filePath)
     Memory ptr size _ -> Just (ALUT.FileImage (AL.MemoryRegion (unsafeCoerce ptr) (fromIntegral size)))
     HelloWorld -> Just ALUT.HelloWorld
     WhiteNoise -> Just (ALUT.WhiteNoise 1.1)
@@ -530,10 +509,6 @@ pitchSlideOut = undefined
 
 -----------------------------------------------------------
 -----------------------------------------------------------
------------------------------------------------------------
------------------------------------------------------------
------------------------------------------------------------
-
 --type Wave a = SF a DataSource
 
 --wave :: Wave -> Hz -> DataSource
@@ -586,5 +561,69 @@ bar =
     sourceSoundDataSF = undefined
     -}
 
--- sourceGain' :: Float -> SF Source Source
--- sourceGain' = undefined
+-----------------------------------------------------------
+-- rotary ?
+
+-------------------------------------------------------------------------------
+-- EXTENSION SOURCE EFFECTS ---------------------------------------------------
+-------------------------------------------------------------------------------
+
+{-
+-- not supported yet.
+
+"AL_EXT_ALAW"
+"AL_EXT_BFORMAT"
+"AL_EXT_DOUBLE"
+"AL_EXT_EXPONENT_DISTANCE"
+"AL_EXT_FLOAT32"
+"AL_EXT_IMA4"
+"AL_EXT_LINEAR_DISTANCE"
+"AL_EXT_MCFORMATS"
+"AL_EXT_MULAW"
+"AL_EXT_MULAW_BFORMAT"
+"AL_EXT_MULAW_MCFORMATS"
+"AL_EXT_OFFSET"
+"AL_EXT_SOURCE_RADIUS" <----------- nice
+"AL_EXT_STATIC_BUFFER"
+"AL_EXT_source_distance_model"
+
+"AL_SOFTX_convolution_reverb" <------ nice
+"AL_SOFTX_hold_on_disconnect"
+"AL_SOFTX_map_buffer" <------ nice
+
+"AL_SOFT_MSADPCM"
+
+"AL_SOFT_UHJ"
+"AL_SOFT_UHJ_ex"
+
+"AL_SOFT_callback_buffer"
+"AL_SOFT_deferred_updates"
+"AL_SOFT_direct_channels"
+"AL_SOFT_direct_channels_remix"
+"AL_SOFT_effect_target" <------ ?
+"AL_SOFT_events"
+"AL_SOFT_gain_clamp_ex"
+"AL_SOFT_loop_points" <------ ?
+"AL_SOFT_source_latency" <------ ?
+"AL_SOFT_source_length" <------ ?
+"AL_SOFT_source_resampler" <------ ?
+"AL_SOFT_source_spatialize" <------ ?
+"AL_SOFT_source_start_delay" <------ nice
+
+"ALC_ENUMERATE_ALL_EXT"
+"ALC_ENUMERATION_EXT"
+
+"ALC_EXT_CAPTURE"
+"ALC_EXT_DEDICATED"
+"ALC_EXT_EFX"
+"ALC_EXT_disconnect"
+"ALC_EXT_thread_local_context"
+
+"ALC_SOFT_HRTF"
+"ALC_SOFT_device_clock"
+"ALC_SOFT_loopback"
+"ALC_SOFT_loopback_bformat"
+"ALC_SOFT_output_limiter"
+"ALC_SOFT_output_mode"
+"ALC_SOFT_pause_device"
+-}
