@@ -19,6 +19,7 @@ dependencies:
 - ObjectName
 - tree-diff
 - async
+- vector
 
 ghc-options:
 - -Wall
