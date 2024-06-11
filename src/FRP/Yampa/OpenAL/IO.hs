@@ -1,118 +1,99 @@
-
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LiberalTypeSynonyms #-}
+{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module FRP.Yampa.OpenAL.IO
 where
 
-
-import Data.Map (Map)
-import Linear.V3 (V3)
+import Control.Concurrent
+import Control.Exception
+import Control.Monad
+import Control.Monad.IO.Class
+import Data.Bifunctor
+import Data.StateVar
+import FRP.Yampa.OpenAL.Types
+import FRP.Yampa.OpenAL.Util
+import qualified Sound.ALUT.Initialization as AL
 import qualified Sound.OpenAL as AL
-import qualified Sound.ALUT.Loaders as AL
+import System.Timeout
 
+-----------------------------------------------------------
 
-update :: Soundstage -> Soundstage -> IO ()
-update = undefined
-    -- TODO works foward and backwards in time
+-- | Internal.
+type ALApp = ()
 
+-- TODO needs to contain source and buffer maps or caches
 
-updateSource :: Source -> Source -> IO ()
-updateSource = undefined
+-----------------------------------------------------------
+withAL :: (MonadIO m) => (ALApp -> m a) -> m a
+{-# INLINE withAL #-}
+withAL k = do
+    AL.runALUT name [] \_name _arguments -> do
+        _ <- liftIO (forkIO (forever (threadDelay 1 >> runErrors)))
+        k ()
+  where
+    name = "[Yampa-OpenAL]"
+    timeout_ = 5_000_000
+    runErrors :: IO ()
+    runErrors = do
+        handle (\exc -> putStrLn (name <> ": " <> show (exc :: SomeException))) do
+            void $ timeout timeout_ do
+                errors <- AL.alErrors
+                if not (null errors)
+                    then putStrLn (name <> show errors)
+                    else threadDelay (timeout_ `div` 2)
+
+-----------------------------------------------------------
+updateSoundstage :: (MonadIO m) => ALApp -> Soundstage -> Soundstage -> m ()
+{-# INLINE updateSoundstage #-}
+updateSoundstage app ss1 ss0 = do
+    when True updateSpeedOfSound
+    when True updateDistanceModel
+    when True updateDopplerFactor
+    when True updateListenerPos
+    when True updateListenerVel
+    when True updateListenerOri
+    when True updateListenerGai
+    when True updateSources
+  where
+    updateSpeedOfSound = AL.speedOfSound $= realToFrac (soundstageSpeedOfSound ss1)
+    updateDistanceModel = AL.distanceModel $= soundstageDistanceModel ss1
+    updateDopplerFactor = AL.dopplerFactor $= realToFrac (soundstageDopplerFactor ss1)
+    updateListenerPos = AL.listenerPosition $= _v3ToVertex (soundstageListenerPosition ss1)
+    updateListenerVel = AL.listenerVelocity $= _v3ToVector (soundstageListenerVelocity ss1)
+    updateListenerOri = AL.orientation $= bimap _v3ToVector _v3ToVector (soundstageListenerOrientation ss1)
+    updateListenerGai = AL.listenerGain $= realToFrac (soundstageListenerGain ss1)
+    -- TODO
+    updateSources = forM_ ([] {-undefined ss1 ss0-}) (uncurry (updateSource app))
+
+-----------------------------------------------------------
+updateListener = undefined
+
+-----------------------------------------------------------
+updateSource :: (MonadIO m) => ALApp -> Source -> Source -> m ()
+{-# INLINE updateSource #-}
+updateSource app s1 s0 = do
+    when (sourceState s1 /= sourceState s0) updateState
+    when (sourcePitch s1 /= sourcePitch s0) updatePitch
+  where
+    -- , sourceState {--------------} :: !AL.SourceState -- almost always playing.
+    -- , sourceLoopingMode {--------} :: !AL.LoopingMode -- almost always one-shot.
+    -- , sourceBufferQueue {--------} :: ![AL.Buffer]
+    -- , sourcePitch {--------------} :: !Pitch -- almost always one.
+    -- , sourceStartOffset {--------} :: !Float
+    -- , sourceOffset {-------------} :: !Float
+
+    updateState = case sourceState s1 of
+        AL.Playing -> AL.play [undefined]
+        __________ -> return ()
+    updatePitch = case sourceState s1 of
+        AL.Playing -> AL.play [undefined]
+        __________ -> return ()
 
 {-
-withAL :: Int -> (ALApp -> IO a) -> IO a
-{-# INLINE withAL #-}
-withAL maxSources !k = do
-    ALUT.runALUT "Yampa-OpenAL" [] \_name _arguments -> do
-        undefined -- buffers <- newMVar mempty
-        nullSource <- ObjectName.genObjectName
-        ptr <- Array.newArray @AL.Source (replicate maxSources nullSource)
-        sources <- newMVar ptr
-        groups <- newMVar undefined
-        ________ <- forkIO (forever runErrors)
-        undefined -- k (ALApp buffers sources groups nullSource)
-  where
-    runErrors = do
-        errors <- AL.alErrors
-        if null errors
-            then putStrLn ("[yampa-openal]: "<> show errors)
-            else threadDelay 5_010_101
-
------------------------------------------------------------
--- reactInitSoundscape :: ALApp -> a -> SF a Soundscape -> IO (ReactHandle a (Event (Soundscape, Soundscape)))
-{-# INLINEABLE reactInitSoundscape #-}
-reactInitSoundscape alApp a soundscapeSF = do
-    Yampa.reactInit (pure a) actuate
-        $ loopPre emptySoundscape
-        $ proc (a', prev) -> do
-            xs <- _updateRoutine alApp <<< soundscapeSF -< a'
-            returnA -< (Event xs, prev)
-  where
-    actuate _ _ = \case
-        NoEvent -> pure False
-        Event actions -> do
-            forM_ actions id
-            return (not (null actions))
-
------------------------------------------------------------
-_updateRoutine :: ALApp -> SF Soundscape [IO ()]
-_updateRoutine alApp =
-    join <$> parB
-        [ updateListenerPos <<< listenerPositionChanged
-        , updateListenerVel <<< listenerVelocityChanged
-        , updateListenerOri <<< listenerOrientationChanged
-        , updateListenerGai <<< listenerGainChanged
-        , updateSpeedOfSound  <<< speedOfSoundChanged
-        , updateDistanceModel <<< distanceModelChanged
-        , updateDopplerFactor <<< dopplerFactorChanged
-        , updateSourceGroups <<< sourceGroupsChanged
-        ]
-
-  where
-
-    updateSpeedOfSound = undefined
-    speedOfSoundChanged= undefined -- (AL.speedOfSound $= realToFrac (soundscapeSpeedOfSound s1))
-
-    updateDistanceModel= undefined
-    distanceModelChanged= undefined -- (AL.distanceModel $= soundscapeDistanceModel s1)
-
-    updateDopplerFactor= undefined
-    dopplerFactorChanged = undefined-- undefined -- undefined -- undefined -- undefined -- undefined -- undefined -- undefined -- soundscapeDopplerFactor
-
-    sourceGroupsChanged = loopPre emptySoundscape $ proc (next_, prev) -> do
-        undefined -< next_
-    updateSourceGroups = proc groups -> do
-        returnA -< fmap foo (Map.toList groups)
-      where
-        foo = \case
-            (_, (Nothing,Nothing)) -> error "impossible"
-            (_, (Just prev,Nothing)) -> sourceGroupWasDeleted prev
-            (_, (Nothing,Just next)) -> sourceGroupWasCreated  next
-            (_, (Just prev,Just next)) -> sourceGroupWasModified prev next
-          where
-            sourceGroupWasDeleted (prev) = do
-                undefined
-
-            sourceGroupWasCreated (next) = do
-                undefined
-
-            sourceGroupWasModified (prev) (next) = do
-                undefined
-
-    sourceChanged = undefined
-    updateSource = undefined -- proc sources -> do
-        --returnA -< fmap foo (Map.toList sources)
-      where
-        foo = \case
-            (_, (Nothing,Nothing)) -> error "impossible"
-            (_, (Just prev,Nothing)) -> sourceWasDeleted prev
-            (_, (Nothing,Just next)) -> sourceWasCreated  next
-            (_, (Just prev,Just next)) -> sourceWasModified prev next
-          where
-            sourceWasDeleted = do
-                undefined
 
             sourceWasCreated = do
                 undefined
@@ -153,104 +134,12 @@ _updateRoutine alApp =
             --
             -- TODO AL.pitch sid $= realToFrac (sourcePitch source_)
 
-    -----------------------------------------------------------
-    listenerPositionChanged :: SF Soundscape (Event (V3 Float))
-    listenerPositionChanged = loopPre emptySoundscape $ proc (next_, prev) -> do
-        let pos = listenerPosition (soundscapeListener prev) /= listenerPosition (soundscapeListener next_)
-        returnA -< (if pos then Event (listenerPosition (soundscapeListener next_)) else NoEvent, next_)
-    updateListenerPos :: SF (Event (V3 Float)) [IO ()]
-    updateListenerPos = proc ev -> do
-        case ev of
-            Event v3 -> returnA -< [AL.listenerPosition $= _v3ToVertex v3]
-            NoEvent  -> returnA -< []
-
-    -----------------------------------------------------------
-    listenerVelocityChanged :: SF Soundscape (Event (V3 Float))
-    listenerVelocityChanged = loopPre emptySoundscape $ proc (next_, prev) -> do
-        let vel = listenerVelocity (soundscapeListener prev) /= listenerVelocity (soundscapeListener next_)
-        returnA -< (if vel then Event (listenerVelocity (soundscapeListener next_)) else NoEvent, next_)
-    updateListenerVel :: SF (Event (V3 Float)) [IO ()]
-    updateListenerVel = proc ev -> do
-        case ev of
-            Event v3 -> returnA -< [AL.listenerVelocity $= _v3ToVector v3]
-            NoEvent  -> returnA -< []
-
-    -----------------------------------------------------------
-    listenerOrientationChanged = loopPre emptySoundscape $ proc (next_, prev) -> do
-        let ori = listenerOrientation (soundscapeListener prev) /= listenerOrientation (soundscapeListener next_)
-        returnA -< (if ori then Event (listenerOrientation (soundscapeListener next_)) else NoEvent, next_)
-    updateListenerOri = proc ev -> do
-        case ev of
-            Event (v3a,v3b) -> returnA -< [AL.orientation $= (_v3ToVector v3a, _v3ToVector v3b)]
-            NoEvent  -> returnA -< []
-
-    -----------------------------------------------------------
-    listenerGainChanged :: SF Soundscape (Event Float)
-    listenerGainChanged = loopPre emptySoundscape $ proc (next_, prev) -> do
-        let g = listenerGain (soundscapeListener prev) /= listenerGain (soundscapeListener next_)
-        returnA -< undefined -- (if g then Event (listenerGain (soundscapeListener next_)) else NoEvent, next_)
-    updateListenerGai :: SF (Event Float) [IO ()]
-    updateListenerGai = proc ev -> do
-        case ev of
-            Event g -> returnA -< [AL.listenerGain $= realToFrac g]
-            NoEvent -> returnA -< []
-
--------------------------------------------------------------------------------
--- INTERNAL / HELPERS ---------------------------------------------------------
--------------------------------------------------------------------------------
-
------------------------------------------------------------
--- Internal.
 data ALApp = ALApp
     { --alAppBuffers :: !(MVar (Map DataSource AL.Buffer)) -- fat cache, good for now
-
       alAppSources :: !(MVar (Ptr AL.Source)) -- associates ints with al.sources
-
     , alAppSourceGroups :: !(MVar (Ptr AL.Source)) -- associates ints with al.sources
-
     , alAppNullSource :: AL.Source
     }
-
-------------------------------------------------------------
-
--- | Number conversion thing.
-_v3ToVertex :: V3 Float -> AL.Vertex3 AL.ALfloat
-{-# INLINE _v3ToVertex #-}
-_v3ToVertex (V3 x y z) =
-    AL.Vertex3
-        (realToFrac x)
-        (realToFrac y)
-        (realToFrac z)
-
-------------------------------------------------------------
-_vertexToV3 :: AL.Vertex3 AL.ALfloat -> V3 Float
-{-# INLINE _vertexToV3 #-}
-_vertexToV3 (AL.Vertex3 x y z) =
-    V3
-        (realToFrac x)
-        (realToFrac y)
-        (realToFrac z)
-
-------------------------------------------------------------
-
--- | Number conversion thing.
-_v3ToVector :: V3 Float -> AL.Vector3 AL.ALfloat
-{-# INLINE _v3ToVector #-}
-_v3ToVector (V3 x y z) =
-    AL.Vector3
-        (realToFrac x)
-        (realToFrac y)
-        (realToFrac z)
-
-------------------------------------------------------------
-
--- | Number conversion thing.
-_v2ToVectorPair :: V2 Float -> (AL.ALfloat, AL.ALfloat)
-{-# INLINE _v2ToVectorPair #-}
-_v2ToVectorPair (V2 a b) =
-    ( realToFrac a
-    , realToFrac b
-    )
 
 -----------------------------------------------------------
 {-# INLINE dataConvert #-}
@@ -275,16 +164,9 @@ dataLooping = \case
     Square{} -> AL.Looping
     Sawtooth{} -> AL.Looping
     Impulse{} -> AL.Looping
-
-{-
             let new = Map.difference (soundscapeSources s1) (soundscapeSources s0)
             let gone = Map.difference (soundscapeSources s0) (soundscapeSources s1)
             let rest = undefined
-
-            -- todo create new
-            -- todo update rest
-            -- todo stop dead
-
             !sources <- readMVar (alAppSources alApp)
             !buffers <- readMVar (alAppBuffers alApp)
 
@@ -351,7 +233,7 @@ dataLooping = \case
             --        buffers <- readMVar (alAppBuffers alApp)
             --        forM_ (soundscapeSources ss1) \sourceGroup_ -> do
             --            forM_ (Map.toList sourceGroup_) \(n, source_) -> do
--}
+
 tick :: IORef Integer -> IO ()
 tick ref = getCPUTime >>= writeIORef ref
 

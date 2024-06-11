@@ -20,6 +20,7 @@ dependencies:
 - tree-diff
 - async
 - vector
+- simple-affine-space
 
 ghc-options:
 - -Wall
