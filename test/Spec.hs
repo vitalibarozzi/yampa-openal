@@ -5,47 +5,38 @@
 {-# LANGUAGE TupleSections #-}
 
 import Control.Concurrent
-import Control.Concurrent.Async
 import Control.Monad
-import qualified Data.Map as Map
-import FRP.Yampa
 import qualified FRP.Yampa as Yampa
 import FRP.Yampa.OpenAL
-import FRP.Yampa.OpenAL.IO
-import FRP.Yampa.OpenAL.Types
-import Linear.V3
-import Sound.OpenAL.AL.Extensions
-import Sound.OpenAL.ALC.Device
-import Sound.OpenAL.ALC.Extensions
+import qualified Sound.ALUT as ALUT
+import qualified Sound.OpenAL as AL
 import System.Timeout
+import System.CPUTime
 import Data.IORef
 
 main :: IO ()
 main = do
-    withAL \alApp -> do
-        -- mapM_ print =<< alExtensions
-        -- mdevice <- openDevice Nothing
-        -- case mdevice of
-        --    Just device -> do
-        --        mapM_ print =<< alcExtensions device
-        --        undefined
-
+    withSoundstage ((), Yampa.NoEvent) sf \handle -> do
+        helloBuffer <- ALUT.createBuffer ALUT.HelloWorld
+        let queue = [helloBuffer]
         let tdelay = 16_660
         let dt = realToFrac tdelay / 1_000_000
-
-        --handle <- reactInitSoundscape alApp 0 sf
-
-        --timeout 1000000 $ forever do
-        --        (Yampa.react handle (negate dt, Nothing))
-        --        (threadDelay tdelay)
         dtRef <- newIORef 0
+        Yampa.react handle (0, Just ((), Yampa.Event ([source "some-source" queue] <>)))
         timeout 3_000_000 $ forever do
-            --dt <- tack dtRef
-            --tick dtRef
-            --Yampa.react handle (dt / 1_000_000, Nothing)
+            dt <- tack dtRef
+            tick dtRef
+            Yampa.react handle (dt / 1_000_000, Nothing)
             when (dt < tdelay) (threadDelay $ round (tdelay / 1.5))
         pure ()
-  where
-    sf = undefined--ss [-- (fmap pure (slideIn 0.5 4 <<< source (File "test/audio.wav" (0, 137))))
-         --     --reverb () <<< (tremolo 0.8 10 <<< source (Sine 230 1))
-         --   ]
+  where 
+    sf = soundstage_ 1 AL.InverseDistance 0 0 1
+
+tick :: IORef Integer -> IO ()
+tick ref = getCPUTime >>= writeIORef ref
+
+tack :: IORef Integer -> IO Double
+tack ref = do
+    t1 <- getCPUTime
+    t0 <- readIORef ref
+    return (realToFrac (t1 - t0) / 10000)

@@ -37,6 +37,7 @@ data Soundstage = Soundstage
     , soundstageDopplerFactor {--------} :: !Factor
     , soundstageSpeedOfSound {---------} :: !MetersPerSecond
     , soundstageDistanceModel {--------} :: !AL.DistanceModel
+    --
     , soundstageListenerPosition {-----} :: !(V3 Meters)
     , soundstageListenerVelocity {-----} :: !(V3 MetersPerSecond)
     , soundstageListenerOrientation {--} :: !(V3 Meters, V3 Meters)
@@ -60,7 +61,12 @@ data Listener = Listener_
 -- | A source of audio in space.
 data Source = Source
     -- data
-    { sourceID {-----------------} :: !String
+    
+     -- static
+    { sourceID {-----------------} :: !String -- Static.
+    , sourceBufferQueue {--------} :: ![AL.Buffer] -- Static.
+    , sourceLoopingMode {--------} :: !AL.LoopingMode -- Static.
+------------------
     , sourcePosition {-----------} :: !(V3 Meters)
     , sourceVelocity {-----------} :: !(V3 MetersPerSecond)
     , sourceDirection {----------} :: !(V3 Meters)
@@ -72,11 +78,10 @@ data Source = Source
     , sourceReferenceDistance {--} :: !Meters
     , sourceMaxDistance {--------} :: !Meters
     , sourceGainBounds {---------} :: !(Gain, Gain)
-    , -- executive
-      sourceState {--------------} :: !AL.SourceState -- almost always playing.
-    , sourceLoopingMode {--------} :: !AL.LoopingMode -- almost always one-shot.
-    , sourceBufferQueue {--------} :: ![AL.Buffer]
-    , sourcePitch {--------------} :: !Pitch -- almost always one.
+  -------------------- 
+   , -- executive
+      sourceState {--------------} :: !AL.SourceState -- Almost always AL.Playing. Should not be changed directly.
+    , sourcePitch {--------------} :: !Pitch -- Almost always one. Should not be changed directly as it causes time dialation. 
     , sourceStartOffset {--------} :: !Float
     , sourceOffset {-------------} :: !Float
     }

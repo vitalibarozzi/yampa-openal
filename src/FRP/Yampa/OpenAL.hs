@@ -3,12 +3,18 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
-module FRP.Yampa.OpenAL where
+module FRP.Yampa.OpenAL (
+    module FRP.Yampa.OpenAL,
+    module FRP.Yampa.OpenAL.IO,
+)
+where
 
 import qualified Data.Map as Map
 import FRP.Yampa
 import qualified FRP.Yampa as Yampa
+import FRP.Yampa.OpenAL.IO
 import FRP.Yampa.OpenAL.Types
 import Linear.V3
 import qualified Sound.OpenAL as AL
@@ -71,6 +77,7 @@ withListenerPosition = proc (l, evpos) -> do
 withListenerVelocity :: SF (Listener, V3 Float) Listener
 {-# INLINE withListenerVelocity #-}
 withListenerVelocity = proc (l, v1) -> do
+    -- TODO maybe dont needs switch
     let newListener = listener_ (listenerPosition l) v1 (listenerOrientation l) (listenerGain l)
     let velocityChanged = if v1 /= listenerVelocity l then Event () else NoEvent
     let payload = (,) l (tag velocityChanged newListener)
@@ -80,6 +87,7 @@ withListenerVelocity = proc (l, v1) -> do
 withListenerOrientation :: SF (Listener, (V3 Float, V3 Float)) Listener
 {-# INLINE withListenerOrientation #-}
 withListenerOrientation = proc (l, ori) -> do
+    -- TODO maybe dont needs switch
     let newListener = listener_ (listenerPosition l) (listenerVelocity l) ori (listenerGain l)
     let velocityChanged = if ori /= listenerOrientation l then Event () else NoEvent
     let payload = (,) l (tag velocityChanged newListener)
@@ -89,6 +97,7 @@ withListenerOrientation = proc (l, ori) -> do
 withListenerGain :: SF (Listener, Float) Listener
 {-# INLINE withListenerGain #-}
 withListenerGain = proc (l, gain) -> do
+    -- TODO maybe dont needs switch
     let newListener = listener_ (listenerPosition l) (listenerVelocity l) (listenerOrientation l) gain
     let velocityChanged = if gain /= listenerGain l then Event () else NoEvent
     let payload = (,) l (tag velocityChanged newListener)
@@ -98,16 +107,17 @@ withListenerGain = proc (l, gain) -> do
 -- SOURCE MODIFIERS -----------------------------------------------------------
 -------------------------------------------------------------------------------
 
--- TODO
---sourcePosition {-----------} :: !(V3 Meters)
---sourceVelocity {-----------} :: !(V3 MetersPerSecond)
---sourceDirection {----------} :: !(V3 Meters)
---sourceGain {---------------} :: !Gain
---sourceConeAngles {---------} :: !(Angle, Angle) -- Outer cone, inner cone, in degrees.
---sourceConeOuterGain {------} :: !Gain -- Gain outside the cone.
---sourceRolloffFactor {------} :: !Factor
---sourceStartOffset {--------} :: !Float
---sourceOffset {-------------} :: !Float
+-- TODO needs switchings
+-- withPosition {-----------} :: !(V3 Meters)
+-- TODO dont need switching
+-- withVelocity {-----------} :: !(V3 MetersPerSecond)
+-- withDirection {----------} :: !(V3 Meters)
+-- withGain {---------------} :: !Gain
+-- withConeAngles {---------} :: !(Angle, Angle) -- Outer cone, inner cone, in degrees.
+-- withConeOuterGain {------} :: !Gain -- Gain outside the cone.
+-- withRolloffFactor {------} :: !Factor
+-- withStartOffset {--------} :: !Float
+-- withOffset {-------------} :: !Float
 
 -----------------------------------------------------------
 
@@ -137,6 +147,8 @@ withPitch = proc (src0, pitch) -> do
 withState :: SF (Source, Event AL.SourceState) Source
 {-# INLINE withState #-}
 withState = proc (src0, evstate) -> do
+    -- TODO we dont need to switch for state
+    -- actually we may need for stuff like stop and rewind, which changes the offset
     let newSource =
             source_
                 (sourceID src0)
@@ -172,12 +184,15 @@ source_ name queue startAt pitch position0 velocity0 direction state = proc a ->
     returnA
         -<
             Source
+                -- static
                 { sourceID = name
+                , sourceBufferQueue = queue
+                , sourceLoopingMode = OneShot -- TODO
+                -- stuff
                 , sourcePosition = position0 + dx
                 , sourceVelocity = velocity0
                 , sourceDirection = direction
                 , sourceGain = 1 -- TODO
-                , sourcePitch = pitch
                 , sourceGainBounds = (0, 1)
                 , sourceConeAngles = (360, 360) -- TODO -- sounds go in all directions
                 , sourceConeOuterGain = 0 -- TODO -- we hear nothing outside the cone
@@ -185,9 +200,9 @@ source_ name queue startAt pitch position0 velocity0 direction state = proc a ->
                 , sourceRolloffFactor = 1
                 , sourceReferenceDistance = 1
                 , sourceMaxDistance = 10_000 -- try some others
-                , sourceLoopingMode = OneShot -- TODO
+                -- executive
                 , sourceState = state
-                , sourceBufferQueue = queue
+                , sourcePitch = pitch
                 , sourceStartOffset = realToFrac startAt
                 , sourceOffset = realToFrac (startAt + (correction * t * pitch))
                 }
