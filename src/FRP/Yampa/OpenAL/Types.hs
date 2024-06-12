@@ -37,21 +37,17 @@ data Soundstage = Soundstage
     , soundstageDopplerFactor {--------} :: !Factor
     , soundstageSpeedOfSound {---------} :: !MetersPerSecond
     , soundstageDistanceModel {--------} :: !AL.DistanceModel
-    --
-    , soundstageListenerPosition {-----} :: !(V3 Meters)
-    , soundstageListenerVelocity {-----} :: !(V3 MetersPerSecond)
-    , soundstageListenerOrientation {--} :: !(V3 Meters, V3 Meters)
-    , soundstageListenerGain {---------} :: !Gain
+    , soundstageListener {-------------} :: !Listener
     }
     deriving
         (Eq, Show)
 
 -----------------------------------------------------------
 data Listener = Listener_
-    { listenerPosition :: V3 Float
-    , listenerVelocity :: V3 Float
-    , listenerOrientation :: (V3 Float, V3 Float)
-    , listenerGain :: Float
+    { listenerPosition {-----} :: !(V3 Float) -- meters
+    , listenerVelocity {-----} :: !(V3 Float) -- meters per second
+    , listenerOrientation {--} :: !(V3 Float, V3 Float) -- meters
+    , listenerGain {---------} :: !Float
     }
     deriving
         (Eq, Show)
@@ -60,13 +56,9 @@ data Listener = Listener_
 
 -- | A source of audio in space.
 data Source = Source
-    -- data
-    
-     -- static
     { sourceID {-----------------} :: !String -- Static.
     , sourceBufferQueue {--------} :: ![AL.Buffer] -- Static.
     , sourceLoopingMode {--------} :: !AL.LoopingMode -- Static.
-------------------
     , sourcePosition {-----------} :: !(V3 Meters)
     , sourceVelocity {-----------} :: !(V3 MetersPerSecond)
     , sourceDirection {----------} :: !(V3 Meters)
@@ -78,10 +70,8 @@ data Source = Source
     , sourceReferenceDistance {--} :: !Meters
     , sourceMaxDistance {--------} :: !Meters
     , sourceGainBounds {---------} :: !(Gain, Gain)
-  -------------------- 
-   , -- executive
-      sourceState {--------------} :: !AL.SourceState -- Almost always AL.Playing. Should not be changed directly.
-    , sourcePitch {--------------} :: !Pitch -- Almost always one. Should not be changed directly as it causes time dialation. 
+    , sourceState {--------------} :: !AL.SourceState -- Almost always AL.Playing. Should not be changed directly.
+    , sourcePitch {--------------} :: !Pitch -- Almost always one. Should not be changed directly as it causes time dialation.
     , sourceStartOffset {--------} :: !Float
     , sourceOffset {-------------} :: !Float
     }

@@ -167,6 +167,9 @@ withState = proc (src0, evstate) -> do
 -------------------------------------------------------------------------------
 
 -----------------------------------------------------------
+-- | Smart constructor for a sound source. It handles stuff
+-- like keeping the offset correctly when we speed up or slow
+-- down time by changing pitch, for example.
 source_ ::
     String ->
     [Buffer] ->
@@ -184,8 +187,8 @@ source_ name queue startAt pitch position0 velocity0 direction state = proc a ->
     returnA
         -<
             Source
-                -- static
-                { sourceID = name
+                { -- static
+                  sourceID = name
                 , sourceBufferQueue = queue
                 , sourceLoopingMode = OneShot -- TODO
                 -- stuff
@@ -212,7 +215,7 @@ source_ name queue startAt pitch position0 velocity0 direction state = proc a ->
 -----------------------------------------------------------
 listener_ :: V3 Float -> V3 Float -> (V3 Float, V3 Float) -> Float -> SF a Listener
 {-# INLINE listener_ #-}
-listener_ x0 v0 ori0 gain0 = proc a -> do
+listener_ x0 v0 ori0 gain0 = proc _ -> do
     dx <- Yampa.integral -< v0
     returnA -< Listener_ (x0 + dx) v0 ori0 gain0
 
@@ -221,7 +224,7 @@ listener_ x0 v0 ori0 gain0 = proc a -> do
 -- signals of the soundstage at some point.
 soundstage_ ::
     Float ->
-    AL.DistanceModel ->
+    AL.DistanceModel -> -- use AL.InverseDistance in general
     V3 Float ->
     V3 Float ->
     Double ->
@@ -233,8 +236,4 @@ soundstage_ factor model pos vel gain =
         <*> pure factor
         <*> pure 343.3
         <*> pure model
-        -- TODO listener stuff
-        <*> constant pos -- TODO should change with the velocity
-        <*> constant vel
-        <*> constant (V3 0 0 (-1), V3 0 1 0)
-        <*> constant gain
+        <*> listener_ pos vel (V3 0 0 (-1), V3 0 1 0) (realToFrac gain)
