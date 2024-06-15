@@ -14,6 +14,10 @@ import System.Timeout
 import System.CPUTime
 import Data.IORef
 
+
+-- TODO add more specific, unit tests, maybe? even though to know its working 
+-- you still gonna need a human there. but still
+
 main :: IO ()
 main = do
     withSoundstage ((), Yampa.NoEvent) sf \handle -> do

@@ -1,15 +1,22 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
-{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
-module FRP.Yampa.OpenAL.Util where
+module FRP.Yampa.OpenAL.Util
+    ( _v3ToVertex
+    , _vertexToV3
+    , _v3ToVector
+    , _vectorToV3
+    )
+where
 
-import Linear.V2 (V2 (..))
-import Linear.V3 (V3 (..))
 import qualified Sound.OpenAL as AL
+import Data.VectorSpace
+import Linear as L
 
 ------------------------------------------------------------
 
@@ -61,3 +68,21 @@ _v2ToVectorPair (V2 a b) =
     ( realToFrac a
     , realToFrac b
     )
+
+-----------------------------------------------------------
+instance (Eq a, Floating a) => VectorSpace (V2 a) a where
+    zeroVector = L.zero
+    (*^) = (L.*^)
+    negateVector = L.negated
+    (^+^) = (L.^+^)
+    (^-^) = (L.^-^)
+    dot = L.dot
+
+-----------------------------------------------------------
+instance (Eq a, Floating a) => VectorSpace (V3 a) a where
+    zeroVector = L.zero
+    (*^) = (L.*^)
+    negateVector = L.negated
+    (^+^) = (L.^+^)
+    (^-^) = (L.^-^)
+    dot = L.dot

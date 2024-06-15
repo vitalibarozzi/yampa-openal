@@ -21,7 +21,6 @@ module FRP.Yampa.OpenAL.Types (
 where
 
 import Data.Map (Map)
-import Data.VectorSpace
 import FRP.Yampa (SF)
 import Linear as L
 import qualified Sound.ALUT.Loaders as AL
@@ -33,11 +32,11 @@ import qualified Sound.OpenAL as AL
 one specific point in time.
 -}
 data Soundstage = Soundstage
-    { soundstageSources {--------------} :: !(Map String Source)
-    , soundstageDopplerFactor {--------} :: !Factor
-    , soundstageSpeedOfSound {---------} :: !MetersPerSecond
-    , soundstageDistanceModel {--------} :: !AL.DistanceModel
-    , soundstageListener {-------------} :: !Listener
+    { soundstageSources {--------} :: !(Map String Source)
+    , soundstageDopplerFactor {--} :: !Factor
+    , soundstageSpeedOfSound {---} :: !MetersPerSecond
+    , soundstageDistanceModel {--} :: !AL.DistanceModel
+    , soundstageListener {-------} :: !Listener
     }
     deriving
         (Eq, Show)
@@ -101,21 +100,3 @@ type SourceSignal a = SF a Source
 
 -----------------------------------------------------------
 type DeltaSource = SF Source Source
-
------------------------------------------------------------
-instance (Eq a, Floating a) => VectorSpace (V2 a) a where
-    zeroVector = L.zero
-    (*^) = (L.*^)
-    negateVector = L.negated
-    (^+^) = (L.^+^)
-    (^-^) = (L.^-^)
-    dot = L.dot
-
------------------------------------------------------------
-instance (Eq a, Floating a) => VectorSpace (V3 a) a where
-    zeroVector = L.zero
-    (*^) = (L.*^)
-    negateVector = L.negated
-    (^+^) = (L.^+^)
-    (^-^) = (L.^-^)
-    dot = L.dot
