@@ -1,8 +1,5 @@
-{-# LANGUAGE Arrows #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TupleSections #-}
 
 import Control.Concurrent
 import Control.Monad
@@ -22,9 +19,9 @@ main :: IO ()
 main = do
     withSoundstage ((), Yampa.NoEvent) sf \handle -> do
         helloBuffer <- ALUT.createBuffer ALUT.HelloWorld
-        let queue = [helloBuffer]
+        whiteBuffer <- ALUT.createBuffer (ALUT.WhiteNoise 1)
+        let queue = [helloBuffer,whiteBuffer]
         let tdelay = 16_660
-        --let dt = realToFrac tdelay / 1_000_000
         dtRef <- newIORef 0
         _ <- Yampa.react handle (0, Just ((), Yampa.Event ([source "some-source" queue] <>)))
         _ <- timeout 3_000_000 $ forever do
@@ -43,4 +40,4 @@ tack :: IORef Integer -> IO Double
 tack ref = do
     t1 <- getCPUTime
     t0 <- readIORef ref
-    return (realToFrac (t1 - t0) / 10000)
+    return (realToFrac (t1 - t0) / 10_000)

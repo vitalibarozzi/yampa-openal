@@ -36,7 +36,7 @@ source name queue =
         name
         queue
         0 -- startAt
-        0 -- pitch
+        1 -- pitch
         0 -- vel
         0 -- pos
         0 -- ori

@@ -6,7 +6,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use newtype instead of data" #-}
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
@@ -51,9 +50,8 @@ withSoundstage ::
     (ReactHandle a Soundstage -> m b) ->
     m b
 {-# INLINE withSoundstage #-}
-withSoundstage a sf reactimate = do
-    withAL do
-        reactimate <=< reactInitSoundstage a sf
+withSoundstage a sf reactimate = withAL do
+    reactimate <=< reactInitSoundstage a sf
 
 -------------------------------------------------------------------------------
 -- ADVANCED API ---------------------------------------------------------------
@@ -62,13 +60,12 @@ withSoundstage a sf reactimate = do
 -----------------------------------------------------------
 withAL :: (MonadIO m) => (ALApp -> m a) -> m a
 {-# INLINE withAL #-}
-withAL k = do
-    AL.runALUT name [] \_name _arguments -> do
-        reqMap <- liftIO (newIORef mempty)
-        _ <- liftIO (forkIO (forever (threadDelay 1 >> runRequests reqMap >> threadDelay 1 >> runErrors)))
-        ref <- liftIO (newIORef mempty)
-        bufMap <- liftIO (newIORef mempty)
-        k (ALApp ref bufMap reqMap) -- TODO
+withAL k = AL.runALUT name [] \_name _arguments -> do
+    reqMap <- liftIO (newIORef mempty)
+    _ <- liftIO (forkIO (forever (threadDelay 1 >> runRequests reqMap >> threadDelay 1 >> runErrors)))
+    ref <- liftIO (newIORef mempty)
+    bufMap <- liftIO (newIORef mempty)
+    k (ALApp ref bufMap reqMap) -- TODO
   where
     name = "[Yampa-OpenAL]"
     timeout_ = 5_000_000
@@ -76,13 +73,12 @@ withAL k = do
         rm <- readIORef reqMap
         forM_ rm \case CreateReverseBuffer _buffer -> error "not supported yet"
     runErrors :: IO ()
-    runErrors = do
-        handle (\exc -> putStrLn (name <> ": " <> show (exc :: SomeException))) do
-            void $ timeout timeout_ do
-                errors <- AL.alErrors
-                if not (null errors)
-                    then putStrLn (name <> show errors)
-                    else threadDelay (timeout_ `div` 2)
+    runErrors = handle (\exc -> putStrLn (name <> ": " <> show (exc :: SomeException))) do
+        void $ timeout timeout_ do
+            errors <- AL.alErrors
+            if not (null errors)
+                then putStrLn (name <> show errors)
+                else threadDelay (timeout_ `div` 2)
 
 -----------------------------------------------------------
 reactInitSoundstage ::
@@ -92,10 +88,9 @@ reactInitSoundstage ::
     ALApp ->
     m (ReactHandle a Soundstage)
 {-# INLINE reactInitSoundstage #-}
-reactInitSoundstage a sf alApp = do
-    liftIO do
-        ref <- newIORef Nothing
-        Yampa.reactInit (pure a) (actuate ref) sf
+reactInitSoundstage a sf alApp = liftIO do
+    ref <- newIORef Nothing
+    Yampa.reactInit (pure a) (actuate ref) sf
   where
     actuate ref _ updated s1 = do
         when updated do
@@ -108,55 +103,61 @@ reactInitSoundstage a sf alApp = do
 -----------------------------------------------------------
 updateSoundstage :: (MonadIO m) => ALApp -> Soundstage -> Soundstage -> m ()
 {-# INLINE updateSoundstage #-}
-updateSoundstage app ss1 ss0 = do
-    -- when True updateSpeedOfSound
-    -- when True updateDistanceModel
-    -- when True updateDopplerFactor
-    -- when True (updateListener (soundstageListener ss1) (soundstageListener ss0))
-    when True (updateSources app ss1 ss0)
-
--- where
--- updateSpeedOfSound = AL.speedOfSound $= realToFrac (soundstageSpeedOfSound ss1)
--- updateDistanceModel = AL.distanceModel $= soundstageDistanceModel ss1
--- updateDopplerFactor = AL.dopplerFactor $= realToFrac (soundstageDopplerFactor ss1)
+updateSoundstage app ss0 ss1 = do
+    when (soundstageSpeedOfSound ss1 /= soundstageSpeedOfSound ss0) updateSpeedOfSound
+    when (soundstageDistanceModel ss1 /= soundstageDistanceModel ss0) updateDistanceModel
+    when (soundstageDopplerFactor ss1 /= soundstageDopplerFactor ss0) updateDopplerFactor
+    when (soundstageListener ss1 /= soundstageListener ss0) (updateListener (soundstageListener ss1) (soundstageListener ss0))
+    when (soundstageSources ss1 /= soundstageSources ss0) (updateSources app ss0 ss1)
+  where
+    updateSpeedOfSound = AL.speedOfSound $= realToFrac (soundstageSpeedOfSound ss1)
+    updateDistanceModel = AL.distanceModel $= soundstageDistanceModel ss1
+    updateDopplerFactor = AL.dopplerFactor $= realToFrac (soundstageDopplerFactor ss1)
 
 -----------------------------------------------------------
 updateListener :: (MonadIO m) => Listener -> Listener -> m ()
 {-# INLINE updateListener #-}
 updateListener l1 _ = do
-    -- when True updateListenerPos
-    -- when True updateListenerVel
-    -- when True updateListenerOri
-    -- when True updateListenerGai
-    pure ()
-
--- where
--- updateListenerPos = AL.listenerPosition $= _v3ToVertex (listenerPosition l1)
--- updateListenerVel = AL.listenerVelocity $= _v3ToVector (listenerVelocity l1)
--- updateListenerOri = AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation l1)
--- updateListenerGai = AL.listenerGain $= realToFrac (listenerGain l1)
+    when True updateListenerPos
+    when True updateListenerVel
+    when True updateListenerOri
+    when True updateListenerGai
+  where
+    updateListenerPos = AL.listenerPosition $= _v3ToVertex (listenerPosition l1)
+    updateListenerVel = AL.listenerVelocity $= _v3ToVector (listenerVelocity l1)
+    updateListenerOri = AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation l1)
+    updateListenerGai = AL.listenerGain $= realToFrac (listenerGain l1)
 
 -----------------------------------------------------------
 updateSources :: forall m. (MonadIO m) => ALApp -> Soundstage -> Soundstage -> m ()
 {-# INLINE updateSources #-}
-updateSources alApp@(ALApp ref _ _) ss1 ss0 = do
-    _sourceMap <- liftIO $ readIORef ref
+updateSources alApp ss1 ss0 = do
     let (deleted, notDeleted) = splitMissingSources (soundstageSources ss0) (soundstageSources ss1)
     let (created, notCreated) = splitCreatedSources (soundstageSources ss0) (soundstageSources ss1)
     let (modified, _________) = splitModifiedSources notDeleted notCreated
-    _____________________ <- updateNewSources alApp created
-    _____________________ <- updateModifiedSources alApp modified
-    _____________________ <- AL.play =<< lookupALSource alApp (playingFrom created <> playingFrom modified)
-    _____________________ <- AL.stop =<< lookupALSource alApp (deleted <> stoppedFrom modified)
-    _____________________ <- AL.pause =<< lookupALSource alApp (pausedFrom created <> pausedFrom modified)
+    __ <- updateNewSources alApp created
+    __ <- updateModifiedSources alApp modified
+    __ <- AL.play =<< lookupALSource alApp (playingFrom created <> playingFrom modified)
+    __ <- AL.stop =<< lookupALSource alApp (deleted <> stoppedFrom modified)
+    __ <- AL.pause =<< lookupALSource alApp (pausedFrom created <> pausedFrom modified)
     pure ()
   where
     splitMissingSources s0 s1 = (Map.difference s0 s1, Map.intersection s1 s0)
     splitCreatedSources s0 s1 = (Map.difference s1 s0, Map.intersection s1 s0)
-    splitModifiedSources s0 s1 = (Map.intersection s1 s0, Map.intersection s1 s0) -- (undefined (Map.intersection s1 s0), undefined (Map.intersection s1 s0)) -- TODO
-    playingFrom = Map.filter (stateIs Playing)
-    stoppedFrom = Map.filter (stateIs Stopped)
-    pausedFrom = Map.filter (stateIs Paused)
+    splitModifiedSources s0 s1 = (foo s0 (Map.intersection s1 s0), Map.intersection s1 s0)
+    playingFrom = Map.filter ((Playing ==) . sourceState)
+    stoppedFrom = Map.filter ((Stopped ==) . sourceState)
+    pausedFrom = Map.filter ((Paused ==) . sourceState)
+    foo s0 =
+        foldr
+            ( \y@Source{..} mp -> case Map.lookup sourceID s0 of
+                Just x@Source{} ->
+                    if x /= y
+                        then undefined -- TODO
+                        else mp
+                Nothing -> undefined -- TODO
+            )
+            mempty
 
 -----------------------------------------------------------
 updateNewSources ::
@@ -164,12 +165,18 @@ updateNewSources ::
     ALApp ->
     Map String Source ->
     m ()
-updateNewSources alApp newSources = do
-    forM_ newSources \src -> do
-        (source :: AL.Source) <- AL.genObjectName
-        AL.buffer source $= Just (head $ sourceBufferQueue src)
-        liftIO (modifyIORef (sourceMap alApp) (Map.insert (sourceID src) source))
-        updateSource alApp src Nothing
+{-# INLINE updateNewSources #-}
+updateNewSources alApp newSources = forM_ newSources \src -> do
+    (source :: AL.Source) <- AL.genObjectName
+    --when (null $ sourceBufferQueue src) undefined
+    --AL.buffer source $= Just (head $ (sourceBufferQueue src))
+    --liftIO $ AL.queueBuffers source (sourceBufferQueue src)
+    --x <- liftIO $ AL.buffersQueued source
+    --y <- liftIO $ AL.buffersProcessed source
+    --z <- liftIO $ AL.buffersProcessed source
+    --error . show $ (x,y,z)
+    liftIO (modifyIORef (sourceMap alApp) (Map.insert (sourceID src) source))
+    updateSource alApp src Nothing
 
 -----------------------------------------------------------
 updateModifiedSources ::
@@ -179,25 +186,25 @@ updateModifiedSources ::
     m ()
 {-# INLINE updateModifiedSources #-}
 updateModifiedSources alApp modifiedSources = do
-    liftIO $ print ("mod:" <> show modifiedSources)
-    pure ()
+    -- liftIO $ print ("mod:" <> show modifiedSources)
+    pure () -- TODO
 
 -----------------------------------------------------------
 updateSource :: (MonadIO m) => ALApp -> Source -> Maybe Source -> m ()
 {-# INLINE updateSource #-}
 updateSource app s1 ms0 = do
     sid <- fromJust . Map.lookup (sourceID s1) <$> liftIO (readIORef (sourceMap app))
-    -- when True $ AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
-    -- when True $ AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
-    -- when True $ AL.sourceGain sid $= realToFrac (sourceGain s1)
-    -- when True $ AL.gainBounds sid $= let foo = realToFrac (fst (sourceGainBounds s1)) in (foo, realToFrac (snd (sourceGainBounds s1)))
-    -- when True $ AL.direction sid $= _v3ToVector (sourceDirection s1)
-    -- when True $ AL.sourceRelative sid $= sourceRelative s1
-    -- when True $ AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
-    -- when True $ AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
-    -- when True $ AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
-    -- when True $ AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
-    -- when True $ AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
+    when True $ AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
+    when True $ AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
+    when True $ AL.sourceGain sid $= realToFrac (sourceGain s1)
+    when True $ AL.gainBounds sid $= let foo = realToFrac (fst (sourceGainBounds s1)) in (foo, realToFrac (snd (sourceGainBounds s1)))
+    when True $ AL.direction sid $= _v3ToVector (sourceDirection s1)
+    when True $ AL.sourceRelative sid $= sourceRelative s1
+    when True $ AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
+    when True $ AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
+    when True $ AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
+    when True $ AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+    when True $ AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
     case ms0 of
         Nothing -> pure ()
         Just s0 -> do
@@ -226,33 +233,25 @@ updateSource app s1 ms0 = do
 
 -----------------------------------------------------------
 lookupALSource :: (MonadIO m) => ALApp -> Map String Source -> m [AL.Source]
-lookupALSource alApp = do
-    fmap (fmap snd . Map.toList) . mapM lookup_
+{-# INLINE lookupALSource #-}
+lookupALSource alApp =
+    fmap (mapMaybe snd . Map.toList) . mapM lookup_
   where
     lookup_ Source{..} = do
         mp <- liftIO $ readIORef (sourceMap alApp)
         case Map.lookup sourceID mp of
-            Just sid -> pure sid
-            ________ -> error "bug"
-
------------------------------------------------------------
-stateIs :: SourceState -> Source -> Bool
-stateIs s Source{..} =
-    case (sourceState, s) of
-        (Playing, Playing) -> True
-        (Playing, Paused) -> False
-        (Playing, Stopped) -> False
-        x -> error . show $ x
+            Just sid -> pure (Just sid)
+            ________ -> error $ "bug: couldn't find '" <> sourceID <> "'"
 
 -----------------------------------------------------------
 
 -- | Internal.
 data ALApp = ALApp
-    { sourceMap :: IORef (Map String AL.Source)
-    , bufferMap :: IORef (Map String BufferPayload)
-    , requestMap :: IORef [Request]
+    { sourceMap :: !(IORef (Map String AL.Source))
+    , bufferMap :: !(IORef (Map String BufferPayload))
+    , requestMap :: !(IORef [Request])
     }
 
 type BufferPayload = (AL.Buffer, Maybe AL.Buffer)
 
-data Request = CreateReverseBuffer String
+data Request = CreateReverseBuffer !String
