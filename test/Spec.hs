@@ -1,4 +1,5 @@
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE BlockArguments #-}
 
 import Control.Concurrent
@@ -10,6 +11,8 @@ import qualified Sound.OpenAL as AL
 import System.Timeout
 import System.CPUTime
 import Data.IORef
+import FRP.Yampa
+import FRP.Yampa.OpenAL.Types
 
 
 -- TODO add more specific, unit tests, maybe? even though to know its working 
@@ -17,13 +20,23 @@ import Data.IORef
 
 main :: IO ()
 main = do
-    withSoundstage ((), Yampa.NoEvent) sf \handle -> do
+    withSoundstage (False, Yampa.NoEvent) sf \handle -> do
         helloBuffer <- ALUT.createBuffer ALUT.HelloWorld
         whiteBuffer <- ALUT.createBuffer (ALUT.WhiteNoise 1)
-        let queue = [helloBuffer,whiteBuffer]
+        let queue1 = [helloBuffer,whiteBuffer]
+        let queue2 = [whiteBuffer]
         let tdelay = 16_660
         dtRef <- newIORef 0
-        _ <- Yampa.react handle (0, Just ((), Yampa.Event ([source "some-source" queue] <>)))
+        let sources = 
+              [ source "some-source"  queue1
+              , setPitch 1.3 (source "other-source" queue1)
+              , setPitch 0.6 (source "idk-source" queue1)
+              , setPitch 0.3 (source "zidk-source" queue1)
+              , setPitch 0.2 (source "widk-source" queue1)
+              , setPitch 0.1 (source "ridk-source" queue1)
+              ]
+        forM_ sources \src -> do
+            Yampa.react handle (0, Just (False, Yampa.Event (src :)))
         _ <- timeout 3_000_000 $ forever do
             dt <- tack dtRef
             _ <- tick dtRef

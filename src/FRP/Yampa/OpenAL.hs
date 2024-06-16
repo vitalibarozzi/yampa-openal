@@ -120,28 +120,30 @@ withListenerGain = proc (l, gain) -> do
 -- withOffset {-------------} :: !Float
 
 -----------------------------------------------------------
-
-{- | Modify the pitch and adjusts the offset of the source
-accordingly. If pitch is modified separatly from the offset
-they will get desynchronized as the the actual sound in IO
-will be running faster or slower in relation to the source.
--}
-withPitch :: SF (Source, Pitch) Source
-{-# INLINE withPitch #-}
-withPitch = proc (src0, pitch) -> do
-    let newSource =
-            source_
-                (sourceID src0)
-                (sourceBufferQueue src0)
-                (realToFrac $ sourceOffset src0)
-                pitch
-                (sourcePosition src0)
-                (sourceVelocity src0)
-                (sourceDirection src0)
-                (sourceState src0)
-    let pitchChanged = if pitch /= sourcePitch src0 then Event () else NoEvent
-    let payload = (,) src0 (tag pitchChanged newSource)
-    rSwitch identity -< payload
+-- |
+setPitch :: Pitch -> SF a Source -> SF a Source
+setPitch pitch src = 
+    src >>> withPitch
+  where
+    {- | Modify the pitch and adjusts the offset of the source
+    accordingly. If pitch is modified separatly from the offset
+    they will get desynchronized as the the actual sound in IO
+    will be running faster or slower in relation to the source.
+    -}
+    withPitch = proc src0 -> do
+        let newSource =
+                source_
+                    (sourceID src0)
+                    (sourceBufferQueue src0)
+                    (realToFrac $ sourceOffset src0)
+                    pitch
+                    (sourcePosition src0)
+                    (sourceVelocity src0)
+                    (sourceDirection src0)
+                    (sourceState src0)
+        let pitchChanged = if pitch /= sourcePitch src0 then Event () else NoEvent
+        let payload = (,) src0 (tag pitchChanged newSource)
+        rSwitch identity -< payload
 
 -----------------------------------------------------------
 withState :: SF (Source, Event AL.SourceState) Source
@@ -228,9 +230,10 @@ soundstage_ ::
     V3 Float ->
     V3 Float ->
     Double ->
+    -- [SourceSignal a] -> 
     SF (a, Event ([SourceSignal a] -> [SourceSignal a])) Soundstage
 {-# INLINE soundstage_ #-}
-soundstage_ factor model pos vel gain =
+soundstage_ factor model pos vel gain = -- initialSources =
     Soundstage
         <$> fmap (Map.fromList . fmap (\x -> (sourceID x, x))) (drpSwitchB [])
         <*> pure factor

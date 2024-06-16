@@ -37,6 +37,7 @@ import FRP.Yampa.OpenAL.Util
 import qualified Sound.ALUT.Initialization as AL
 import qualified Sound.OpenAL as AL
 import System.Timeout
+import qualified Control.Concurrent.MVar as MVar
 
 -------------------------------------------------------------------------------
 -- SIMPLE API -----------------------------------------------------------------
@@ -60,10 +61,10 @@ withSoundstage a sf reactimate = withAL do
 -----------------------------------------------------------
 withAL :: (MonadIO m) => (ALApp -> m a) -> m a
 {-# INLINE withAL #-}
-withAL k = AL.runALUT name [] \_name _arguments -> do
+withAL k = AL.runALUT name [] \_ _ -> do
     reqMap <- liftIO (newIORef mempty)
     _ <- liftIO (forkIO (forever (threadDelay 1 >> runRequests reqMap >> threadDelay 1 >> runErrors)))
-    ref <- liftIO (newIORef mempty)
+    ref <- liftIO (newMVar mempty)
     bufMap <- liftIO (newIORef mempty)
     k (ALApp ref bufMap reqMap) -- TODO
   where
@@ -138,8 +139,8 @@ updateSources alApp ss1 ss0 = do
     __ <- updateNewSources alApp created
     __ <- updateModifiedSources alApp modified
     __ <- AL.play =<< lookupALSource alApp (playingFrom created <> playingFrom modified)
-    __ <- AL.stop =<< lookupALSource alApp (deleted <> stoppedFrom modified)
-    __ <- AL.pause =<< lookupALSource alApp (pausedFrom created <> pausedFrom modified)
+    --__ <- AL.stop =<< lookupALSource alApp (deleted <> stoppedFrom modified)
+    --__ <- AL.pause =<< lookupALSource alApp (pausedFrom created <> pausedFrom modified)
     pure ()
   where
     splitMissingSources s0 s1 = (Map.difference s0 s1, Map.intersection s1 s0)
@@ -166,17 +167,13 @@ updateNewSources ::
     Map String Source ->
     m ()
 {-# INLINE updateNewSources #-}
-updateNewSources alApp newSources = forM_ newSources \src -> do
-    (source :: AL.Source) <- AL.genObjectName
-    --when (null $ sourceBufferQueue src) undefined
-    --AL.buffer source $= Just (head $ (sourceBufferQueue src))
-    --liftIO $ AL.queueBuffers source (sourceBufferQueue src)
-    --x <- liftIO $ AL.buffersQueued source
-    --y <- liftIO $ AL.buffersProcessed source
-    --z <- liftIO $ AL.buffersProcessed source
-    --error . show $ (x,y,z)
-    liftIO (modifyIORef (sourceMap alApp) (Map.insert (sourceID src) source))
-    updateSource alApp src Nothing
+updateNewSources alApp newSources = do
+    --when (not . null $ (Map.toList newSources)) (error . show $ newSources)
+    forM_ newSources \src -> do
+        (source :: AL.Source) <- AL.genObjectName
+        AL.buffer source $= Just (head (sourceBufferQueue src))
+        liftIO (modifyMVar_ (sourceMap alApp) (pure . Map.insert (sourceID src) source))
+        updateSource alApp Nothing src
 
 -----------------------------------------------------------
 updateModifiedSources ::
@@ -186,34 +183,39 @@ updateModifiedSources ::
     m ()
 {-# INLINE updateModifiedSources #-}
 updateModifiedSources alApp modifiedSources = do
-    -- liftIO $ print ("mod:" <> show modifiedSources)
-    pure () -- TODO
+    forM_ modifiedSources  \src -> do
+        updateSource alApp Nothing src
 
 -----------------------------------------------------------
-updateSource :: (MonadIO m) => ALApp -> Source -> Maybe Source -> m ()
+updateSource :: (MonadIO m) => ALApp -> Maybe Source -> Source -> m ()
 {-# INLINE updateSource #-}
-updateSource app s1 ms0 = do
-    sid <- fromJust . Map.lookup (sourceID s1) <$> liftIO (readIORef (sourceMap app))
-    when True $ AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
-    when True $ AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
-    when True $ AL.sourceGain sid $= realToFrac (sourceGain s1)
-    when True $ AL.gainBounds sid $= let foo = realToFrac (fst (sourceGainBounds s1)) in (foo, realToFrac (snd (sourceGainBounds s1)))
-    when True $ AL.direction sid $= _v3ToVector (sourceDirection s1)
-    when True $ AL.sourceRelative sid $= sourceRelative s1
-    when True $ AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
-    when True $ AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
-    when True $ AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
-    when True $ AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
-    when True $ AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
-    case ms0 of
-        Nothing -> pure ()
-        Just s0 -> do
-            when (sourcePitch s1 /= sourcePitch s0) (AL.pitch sid $= realToFrac (sourcePitch s1))
-            when (sourceOffset s1 /= sourceOffset s0) do
-                if {-going backwards-} 0 > sourceOffset s1 - sourceOffset s0
-                    then useReverseBuffer s0 sid
-                    else useFowardsBuffer s0 sid
-                correctOffset sid s0
+updateSource app ms0 s1 = do
+    foo <- liftIO (takeMVar (sourceMap app))
+    let msid = Map.lookup (sourceID s1) foo
+    case msid of
+        Nothing -> undefined -- pure ()
+        Just sid -> do
+            when True $ AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
+            when True $ AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
+            when True $ AL.sourceGain sid $= realToFrac (sourceGain s1)
+            when True $ AL.gainBounds sid $= let foo = realToFrac (fst (sourceGainBounds s1)) in (foo, realToFrac (snd (sourceGainBounds s1)))
+            when True $ AL.direction sid $= _v3ToVector (sourceDirection s1)
+            when True $ AL.sourceRelative sid $= sourceRelative s1
+            when True $ AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
+            when True $ AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
+            when True $ AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
+            when True $ AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+            when True $ AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
+            case ms0 of
+                Nothing -> AL.pitch sid $= realToFrac (sourcePitch s1)
+                Just s0 -> do
+                    when (sourcePitch s1 /= sourcePitch s0) undefined -- (AL.pitch sid $= realToFrac (sourcePitch s1))
+                    when (sourceOffset s1 /= sourceOffset s0) do
+                        if {-going backwards-} 0 > sourceOffset s1 - sourceOffset s0
+                            then useReverseBuffer s0 sid
+                            else useFowardsBuffer s0 sid
+                        correctOffset sid s0
+    liftIO $ putMVar (sourceMap app) foo
   where
     dt s0 = sourceOffset s1 - sourceOffset s0
     tolerance = 0.1 -- seconds
@@ -238,16 +240,18 @@ lookupALSource alApp =
     fmap (mapMaybe snd . Map.toList) . mapM lookup_
   where
     lookup_ Source{..} = do
-        mp <- liftIO $ readIORef (sourceMap alApp)
+        mp <- liftIO $ takeMVar (sourceMap alApp)
         case Map.lookup sourceID mp of
-            Just sid -> pure (Just sid)
+            Just sid -> do
+                liftIO $ putMVar (sourceMap alApp) mp
+                pure (Just sid)
             ________ -> error $ "bug: couldn't find '" <> sourceID <> "'"
 
 -----------------------------------------------------------
 
 -- | Internal.
 data ALApp = ALApp
-    { sourceMap :: !(IORef (Map String AL.Source))
+    { sourceMap :: !(MVar (Map String AL.Source))
     , bufferMap :: !(IORef (Map String BufferPayload))
     , requestMap :: !(IORef [Request])
     }
