@@ -4,6 +4,7 @@
 {-# LANGUAGE LiberalTypeSynonyms #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
@@ -108,38 +109,41 @@ reactInitSoundstage a sf alApp = do
 updateSoundstage :: (MonadIO m) => ALApp -> Soundstage -> Soundstage -> m ()
 {-# INLINE updateSoundstage #-}
 updateSoundstage app ss1 ss0 = do
-    when True updateSpeedOfSound
-    when True updateDistanceModel
-    when True updateDopplerFactor
-    when True (updateListener (soundstageListener ss1) (soundstageListener ss0))
+    -- when True updateSpeedOfSound
+    -- when True updateDistanceModel
+    -- when True updateDopplerFactor
+    -- when True (updateListener (soundstageListener ss1) (soundstageListener ss0))
     when True (updateSources app ss1 ss0)
-  where
-    updateSpeedOfSound = AL.speedOfSound $= realToFrac (soundstageSpeedOfSound ss1)
-    updateDistanceModel = AL.distanceModel $= soundstageDistanceModel ss1
-    updateDopplerFactor = AL.dopplerFactor $= realToFrac (soundstageDopplerFactor ss1)
+
+-- where
+-- updateSpeedOfSound = AL.speedOfSound $= realToFrac (soundstageSpeedOfSound ss1)
+-- updateDistanceModel = AL.distanceModel $= soundstageDistanceModel ss1
+-- updateDopplerFactor = AL.dopplerFactor $= realToFrac (soundstageDopplerFactor ss1)
 
 -----------------------------------------------------------
 updateListener :: (MonadIO m) => Listener -> Listener -> m ()
 {-# INLINE updateListener #-}
 updateListener l1 _ = do
-    when True updateListenerPos
-    when True updateListenerVel
-    when True updateListenerOri
-    when True updateListenerGai
-  where
-    updateListenerPos = AL.listenerPosition $= _v3ToVertex (listenerPosition l1)
-    updateListenerVel = AL.listenerVelocity $= _v3ToVector (listenerVelocity l1)
-    updateListenerOri = AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation l1)
-    updateListenerGai = AL.listenerGain $= realToFrac (listenerGain l1)
+    -- when True updateListenerPos
+    -- when True updateListenerVel
+    -- when True updateListenerOri
+    -- when True updateListenerGai
+    pure ()
+
+-- where
+-- updateListenerPos = AL.listenerPosition $= _v3ToVertex (listenerPosition l1)
+-- updateListenerVel = AL.listenerVelocity $= _v3ToVector (listenerVelocity l1)
+-- updateListenerOri = AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation l1)
+-- updateListenerGai = AL.listenerGain $= realToFrac (listenerGain l1)
 
 -----------------------------------------------------------
 updateSources :: forall m. (MonadIO m) => ALApp -> Soundstage -> Soundstage -> m ()
 {-# INLINE updateSources #-}
 updateSources alApp@(ALApp ref _ _) ss1 ss0 = do
     _sourceMap <- liftIO $ readIORef ref
-    (deleted, notDeleted) <- splitMissingSources (soundstageSources ss0) (soundstageSources ss1)
-    (created, notCreated) <- splitCreatedSources (soundstageSources ss0) (soundstageSources ss1)
-    (modified, _________) <- splitModifiedSources notDeleted notCreated
+    let (deleted, notDeleted) = splitMissingSources (soundstageSources ss0) (soundstageSources ss1)
+    let (created, notCreated) = splitCreatedSources (soundstageSources ss0) (soundstageSources ss1)
+    let (modified, _________) = splitModifiedSources notDeleted notCreated
     _____________________ <- updateNewSources alApp created
     _____________________ <- updateModifiedSources alApp modified
     _____________________ <- AL.play =<< lookupALSource alApp (playingFrom created <> playingFrom modified)
@@ -147,25 +151,12 @@ updateSources alApp@(ALApp ref _ _) ss1 ss0 = do
     _____________________ <- AL.pause =<< lookupALSource alApp (pausedFrom created <> pausedFrom modified)
     pure ()
   where
-    splitMissingSources :: Map String Source -> Map String Source -> m (Map String Source, Map String Source)
-    splitMissingSources s0 s1 = do
-        -- all sources that are in the old one but not in the new one
-        pure (mempty,mempty) -- undefined -- pure ([], []) -- undefined -- TODO
-
-    splitCreatedSources :: Map String Source -> Map String Source -> m (Map String Source, Map String Source)
-    splitCreatedSources _ _ = do
-        -- all sources there are in the new stage but not in the old one
-        --undefined -- pure ([], []) -- undefined -- TODO
-        pure (mempty,mempty) -- undefined -- pure ([], []) -- undefined -- TODO
-
-    splitModifiedSources :: Map String Source -> Map String Source -> m (Map String Source, Map String Source)
-    splitModifiedSources _ _ = do
-        --undefined -- pure ([], []) -- undefined -- TODO
-        pure (mempty,mempty) -- undefined -- pure ([], []) -- undefined -- TODO
-
-    playingFrom = Map.filter (stateIs Playing) 
+    splitMissingSources s0 s1 = (Map.difference s0 s1, Map.intersection s1 s0)
+    splitCreatedSources s0 s1 = (Map.difference s1 s0, Map.intersection s1 s0)
+    splitModifiedSources s0 s1 = (Map.intersection s1 s0, Map.intersection s1 s0) -- (undefined (Map.intersection s1 s0), undefined (Map.intersection s1 s0)) -- TODO
+    playingFrom = Map.filter (stateIs Playing)
     stoppedFrom = Map.filter (stateIs Stopped)
-    pausedFrom  = Map.filter (stateIs Paused)
+    pausedFrom = Map.filter (stateIs Paused)
 
 -----------------------------------------------------------
 updateNewSources ::
@@ -174,10 +165,11 @@ updateNewSources ::
     Map String Source ->
     m ()
 updateNewSources alApp newSources = do
-    -- TODO we need to create the source and attach the buffer
-    -- then change the parameters
-    -- no need to play it, it will be done somewhere else
-    pure () -- undefined
+    forM_ newSources \src -> do
+        (source :: AL.Source) <- AL.genObjectName
+        AL.buffer source $= Just (head $ sourceBufferQueue src)
+        liftIO (modifyIORef (sourceMap alApp) (Map.insert (sourceID src) source))
+        updateSource alApp src Nothing
 
 -----------------------------------------------------------
 updateModifiedSources ::
@@ -187,6 +179,7 @@ updateModifiedSources ::
     m ()
 {-# INLINE updateModifiedSources #-}
 updateModifiedSources alApp modifiedSources = do
+    liftIO $ print ("mod:" <> show modifiedSources)
     pure ()
 
 -----------------------------------------------------------
@@ -194,17 +187,17 @@ updateSource :: (MonadIO m) => ALApp -> Source -> Maybe Source -> m ()
 {-# INLINE updateSource #-}
 updateSource app s1 ms0 = do
     sid <- fromJust . Map.lookup (sourceID s1) <$> liftIO (readIORef (sourceMap app))
-    when True $ AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
-    when True $ AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
-    when True $ AL.sourceGain sid $= realToFrac (sourceGain s1)
-    when True $ AL.gainBounds sid $= let foo = realToFrac (fst (sourceGainBounds s1)) in (foo, realToFrac (snd (sourceGainBounds s1)))
-    when True $ AL.direction sid $= _v3ToVector (sourceDirection s1)
-    when True $ AL.sourceRelative sid $= sourceRelative s1
-    when True $ AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
-    when True $ AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
-    when True $ AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
-    when True $ AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
-    when True $ AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
+    -- when True $ AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
+    -- when True $ AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
+    -- when True $ AL.sourceGain sid $= realToFrac (sourceGain s1)
+    -- when True $ AL.gainBounds sid $= let foo = realToFrac (fst (sourceGainBounds s1)) in (foo, realToFrac (snd (sourceGainBounds s1)))
+    -- when True $ AL.direction sid $= _v3ToVector (sourceDirection s1)
+    -- when True $ AL.sourceRelative sid $= sourceRelative s1
+    -- when True $ AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
+    -- when True $ AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
+    -- when True $ AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
+    -- when True $ AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+    -- when True $ AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
     case ms0 of
         Nothing -> pure ()
         Just s0 -> do
@@ -231,14 +224,25 @@ updateSource app s1 ms0 = do
         -- checkIf the buffer been used is the not reversed one, if it isnt, make it be.
         error "TODO"
 
-
 -----------------------------------------------------------
 lookupALSource :: (MonadIO m) => ALApp -> Map String Source -> m [AL.Source]
-lookupALSource alApp mp = pure []
+lookupALSource alApp = do
+    fmap (fmap snd . Map.toList) . mapM lookup_
+  where
+    lookup_ Source{..} = do
+        mp <- liftIO $ readIORef (sourceMap alApp)
+        case Map.lookup sourceID mp of
+            Just sid -> pure sid
+            ________ -> error "bug"
 
-
-stateIs :: AL.SourceState -> Source -> Bool
-stateIs _ _ = True
+-----------------------------------------------------------
+stateIs :: SourceState -> Source -> Bool
+stateIs s Source{..} =
+    case (sourceState, s) of
+        (Playing, Playing) -> True
+        (Playing, Paused) -> False
+        (Playing, Stopped) -> False
+        x -> error . show $ x
 
 -----------------------------------------------------------
 

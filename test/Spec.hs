@@ -24,13 +24,13 @@ main = do
         helloBuffer <- ALUT.createBuffer ALUT.HelloWorld
         let queue = [helloBuffer]
         let tdelay = 16_660
-        let dt = realToFrac tdelay / 1_000_000
+        --let dt = realToFrac tdelay / 1_000_000
         dtRef <- newIORef 0
-        Yampa.react handle (0, Just ((), Yampa.Event ([source "some-source" queue] <>)))
-        timeout 3_000_000 $ forever do
+        _ <- Yampa.react handle (0, Just ((), Yampa.Event ([source "some-source" queue] <>)))
+        _ <- timeout 3_000_000 $ forever do
             dt <- tack dtRef
-            tick dtRef
-            Yampa.react handle (dt / 1_000_000, Nothing)
+            _ <- tick dtRef
+            _ <- Yampa.react handle (dt / 1_000_000, Nothing)
             when (dt < tdelay) (threadDelay $ round (tdelay / 1.5))
         pure ()
   where 
