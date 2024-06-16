@@ -1,22 +1,23 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module FRP.Yampa.OpenAL.Util
-    ( _v3ToVertex
-    , _vertexToV3
-    , _v3ToVector
-    , _vectorToV3
-    )
+module FRP.Yampa.OpenAL.Util (
+    _v3ToVertex,
+    _vertexToV3,
+    _v3ToVector,
+    _vectorToV3,
+    smooth,
+)
 where
 
-import qualified Sound.OpenAL as AL
-import Data.VectorSpace
+import FRP.Yampa
 import Linear as L
+import qualified Sound.OpenAL as AL
 
 ------------------------------------------------------------
 
@@ -37,6 +38,7 @@ _vertexToV3 (AL.Vertex3 x y z) =
         (realToFrac x)
         (realToFrac y)
         (realToFrac z)
+
 ------------------------------------------------------------
 
 -- | Number conversion thing.
@@ -68,6 +70,20 @@ _v2ToVectorPair (V2 a b) =
     ( realToFrac a
     , realToFrac b
     )
+
+-----------------------------------------------------------
+smooth :: (Ord c, Fractional c) => Time -> c -> c -> SF a c
+smooth for max_ value = do
+    let dtb = for / 2
+    let dts = dtb / 3
+    if value > max_
+        then
+            delay dts max_
+                <<< delay dts ((max_ + value) / 2)
+                <<< delay dts (max_ + (value / 2))
+                <<< delay dtb value
+                <<< constant (max_ + (value / 2))
+        else constant value
 
 -----------------------------------------------------------
 instance (Eq a, Floating a) => VectorSpace (V2 a) a where

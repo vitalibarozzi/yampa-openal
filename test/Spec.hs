@@ -23,7 +23,8 @@ main = do
     withSoundstage (False, Yampa.NoEvent) sf \handle -> do
         helloBuffer <- ALUT.createBuffer ALUT.HelloWorld
         whiteBuffer <- ALUT.createBuffer (ALUT.WhiteNoise 1)
-        let queue1 = [helloBuffer,whiteBuffer]
+        audioBuffer <- ALUT.createBuffer (ALUT.File "./test/audio.wav")
+        let queue1 = [audioBuffer,helloBuffer,whiteBuffer]
         let queue2 = [whiteBuffer]
         let tdelay = 16_660
         dtRef <- newIORef 0
@@ -35,9 +36,10 @@ main = do
               , setPitch 0.2 (source "widk-source" queue1)
               , setPitch 0.1 (source "ridk-source" queue1)
               ]
+        -- TODO i want to check that the offset of sources with different pitchs but the same buffer is different
         forM_ sources \src -> do
             Yampa.react handle (0, Just (False, Yampa.Event (src :)))
-        _ <- timeout 3_000_000 $ forever do
+        _ <- timeout 9_000_000 $ forever do
             dt <- tack dtRef
             _ <- tick dtRef
             _ <- Yampa.react handle (dt / 1_000_000, Nothing)
