@@ -13,7 +13,7 @@ import System.CPUTime
 import Data.IORef
 import FRP.Yampa
 import FRP.Yampa.OpenAL.Types
-
+import FRP.Yampa.OpenAL.Effects
 
 -- TODO add more specific, unit tests, maybe? even though to know its working 
 -- you still gonna need a human there. but still
@@ -29,12 +29,15 @@ main = do
         let tdelay = 16_660
         dtRef <- newIORef 0
         let sources = 
-              [ source "some-source"  queue1
-              , setPitch 1.3 (source "other-source" queue1)
-              , setPitch 0.6 (source "idk-source" queue1)
-              , setPitch 0.3 (source "zidk-source" queue1)
-              , setPitch 0.2 (source "widk-source" queue1)
-              , setPitch 0.1 (source "ridk-source" queue1)
+              [ --source "some-source"  queue1
+              --, setPitch (constant 1.3) (source "other-source" queue1)
+                setGain (average [tremolo 1.0 3]) (source "other-source" queue1)
+                --setPitch (vibrato 0.3 10) (source "other-source" queue1)
+
+              --, setPitch (constant 0.6) (source "idk-source" queue1)
+              --, setPitch (constant 0.3) (source "zidk-source" queue1)
+              --, setPitch (constant 0.2) (source "widk-source" queue1)
+              --, setPitch (constant 0.1) (source "ridk-source" queue1)
               ]
         -- TODO i want to check that the offset of sources with different pitchs but the same buffer is different
         forM_ sources \src -> do

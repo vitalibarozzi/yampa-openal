@@ -22,6 +22,7 @@ source-repository head
 library
   exposed-modules:
       FRP.Yampa.OpenAL
+      FRP.Yampa.OpenAL.Effects
       FRP.Yampa.OpenAL.IO
       FRP.Yampa.OpenAL.Types
       FRP.Yampa.OpenAL.Util

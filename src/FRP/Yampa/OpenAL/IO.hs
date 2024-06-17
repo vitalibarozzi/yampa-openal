@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
@@ -90,39 +91,55 @@ reactInitSoundstage ::
     m (ReactHandle a Soundstage)
 {-# INLINE reactInitSoundstage #-}
 reactInitSoundstage a sf alApp = liftIO do
-    ref <- newIORef Nothing
+    ref <- newMVar Nothing
     Yampa.reactInit (pure a) (actuate ref) sf
   where
-    actuate ref _ updated s1 = do
+    actuate ssRef _ updated s1 = do
         when updated do
-            readIORef ref >>= \case
-                Nothing -> pure ()
-                Just s0 -> updateSoundstage alApp s1 s0
-            writeIORef ref (Just s1)
+            takeMVar ssRef >>= \case
+                Nothing -> updateSoundstage alApp Nothing s1
+                Just s0 -> updateSoundstage alApp (Just s0) s1
+            putMVar ssRef (Just s1)
         pure updated
 
 -----------------------------------------------------------
-updateSoundstage :: (MonadIO m) => ALApp -> Soundstage -> Soundstage -> m ()
+updateSoundstage :: (MonadIO m) => ALApp -> Maybe Soundstage -> Soundstage -> m ()
 {-# INLINE updateSoundstage #-}
-updateSoundstage app ss0 ss1 = do
-    when (soundstageSpeedOfSound ss1 /= soundstageSpeedOfSound ss0) updateSpeedOfSound
-    when (soundstageDistanceModel ss1 /= soundstageDistanceModel ss0) updateDistanceModel
-    when (soundstageDopplerFactor ss1 /= soundstageDopplerFactor ss0) updateDopplerFactor
-    when (soundstageListener ss1 /= soundstageListener ss0) (updateListener (soundstageListener ss1) (soundstageListener ss0))
-    when (soundstageSources ss1 /= soundstageSources ss0) (updateSources app ss0 ss1)
+updateSoundstage app mss0 ss1 = do
+    case mss0 of
+        Nothing -> do
+            updateSpeedOfSound
+            updateDistanceModel
+            updateDopplerFactor
+            (updateListener Nothing (soundstageListener ss1))
+            updateAllSources app Nothing ss1
+        Just ss0 -> do
+            when (soundstageSpeedOfSound ss1 /= soundstageSpeedOfSound ss0) updateSpeedOfSound
+            when (soundstageDistanceModel ss1 /= soundstageDistanceModel ss0) updateDistanceModel
+            when (soundstageDopplerFactor ss1 /= soundstageDopplerFactor ss0) updateDopplerFactor
+            when (soundstageListener ss1 /= soundstageListener ss0) (updateListener (Just (soundstageListener ss0)) (soundstageListener ss1) )
+            updateAllSources app (Just ss0) ss1
   where
     updateSpeedOfSound = AL.speedOfSound $= realToFrac (soundstageSpeedOfSound ss1)
     updateDistanceModel = AL.distanceModel $= soundstageDistanceModel ss1
     updateDopplerFactor = AL.dopplerFactor $= realToFrac (soundstageDopplerFactor ss1)
 
 -----------------------------------------------------------
-updateListener :: (MonadIO m) => Listener -> Listener -> m ()
+updateListener :: (MonadIO m) => Maybe Listener -> Listener -> m ()
 {-# INLINE updateListener #-}
-updateListener l1 _ = do
-    when True updateListenerPos
-    when True updateListenerVel
-    when True updateListenerOri
-    when True updateListenerGai
+updateListener ml0 l1 = do
+    case ml0 of
+        Nothing -> do
+            updateListenerPos
+            updateListenerVel
+            updateListenerOri
+            updateListenerGai
+        Just l0 -> do
+            -- TODO
+            when True updateListenerPos
+            when True updateListenerVel
+            when True updateListenerOri
+            when True updateListenerGai
   where
     updateListenerPos = AL.listenerPosition $= _v3ToVertex (listenerPosition l1)
     updateListenerVel = AL.listenerVelocity $= _v3ToVector (listenerVelocity l1)
@@ -130,18 +147,32 @@ updateListener l1 _ = do
     updateListenerGai = AL.listenerGain $= realToFrac (listenerGain l1)
 
 -----------------------------------------------------------
-updateSources :: forall m. (MonadIO m) => ALApp -> Soundstage -> Soundstage -> m ()
-{-# INLINE updateSources #-}
-updateSources alApp ss1 ss0 = do
-    let (deleted, notDeleted) = splitMissingSources (soundstageSources ss0) (soundstageSources ss1)
-    let (created, notCreated) = splitCreatedSources (soundstageSources ss0) (soundstageSources ss1)
-    let (modified, _________) = splitModifiedSources notDeleted notCreated
-    __ <- updateNewSources alApp created
-    __ <- updateModifiedSources alApp modified
-    __ <- AL.play =<< lookupALSource alApp (playingFrom created <> playingFrom modified)
-    __ <- AL.stop =<< lookupALSource alApp (deleted <> stoppedFrom modified)
-    __ <- AL.pause =<< lookupALSource alApp (pausedFrom created <> pausedFrom modified)
-    pure ()
+updateAllSources :: forall m. (MonadIO m) => ALApp -> Maybe Soundstage -> Soundstage -> m ()
+{-# INLINE updateAllSources #-}
+updateAllSources alApp mss0 ss1 = do
+    case mss0 of
+        Nothing -> do
+            __ <- forM_ (soundstageSources ss1) (updateSource alApp Nothing)
+            __ <- AL.play =<< lookupALSource alApp (soundstageSources ss1)
+            pure ()
+        Just ss0 -> do
+            let (deleted, notDeleted) = splitMissingSources (soundstageSources ss0) (soundstageSources ss1)
+            let (created, notCreated) = splitCreatedSources (soundstageSources ss0) (soundstageSources ss1)
+            let (modified, _________) = splitModifiedSources notDeleted notCreated
+            -------------------------
+            -- update new sourcs
+            __ <- forM_ created \src -> do
+                        (source :: AL.Source) <- AL.genObjectName
+                        liftIO $ AL.buffer source $= Just (head (sourceBufferQueue src)) -- TODO
+                        liftIO (modifyMVar_ (sourceMap alApp) (pure . Map.insert (sourceID src) source))
+                        updateSource @m alApp Nothing src
+            -- update modified sources
+            --__ <- undefined
+            -----------------------
+            __ <- AL.play =<< lookupALSource alApp (playingFrom created <> playingFrom modified)
+            __ <- AL.stop =<< lookupALSource alApp (deleted <> stoppedFrom modified)
+            __ <- AL.pause =<< lookupALSource alApp (pausedFrom created <> pausedFrom modified)
+            pure ()
   where
     splitMissingSources s0 s1 = (Map.difference s0 s1, Map.intersection s1 s0)
     splitCreatedSources s0 s1 = (Map.difference s1 s0, Map.intersection s1 s0)
@@ -162,30 +193,6 @@ updateSources alApp ss1 ss0 = do
             mempty
 
 -----------------------------------------------------------
-updateNewSources ::
-    (MonadIO m) =>
-    ALApp ->
-    Map String Source ->
-    m ()
-{-# INLINE updateNewSources #-}
-updateNewSources alApp newSources = do
-    forM_ newSources \src -> do
-        (source :: AL.Source) <- AL.genObjectName
-        AL.buffer source $= Just (head (sourceBufferQueue src)) -- TODO
-        liftIO (modifyMVar_ (sourceMap alApp) (pure . Map.insert (sourceID src) source))
-        updateSource alApp Nothing src
-
------------------------------------------------------------
-updateModifiedSources ::
-    (MonadIO m) =>
-    ALApp ->
-    Map String Source ->
-    m ()
-{-# INLINE updateModifiedSources #-}
-updateModifiedSources alApp = do
-    mapM_ (updateSource alApp Nothing)
-
------------------------------------------------------------
 updateSource ::
     (MonadIO m) =>
     ALApp ->
@@ -195,7 +202,6 @@ updateSource ::
 {-# INLINE updateSource #-}
 updateSource alApp ms0 s1 = do
     foo <- liftIO (takeMVar (sourceMap alApp))
-    liftIO $ putMVar (sourceMap alApp) foo
     let sid = fromJust (Map.lookup (sourceID s1) foo)
     case ms0 of
         Nothing -> do
@@ -237,6 +243,7 @@ updateSource alApp ms0 s1 = do
                     then useReverseBuffer s0 sid
                     else useFowardsBuffer alApp s0 sid
                 correctOffset sid s0
+    liftIO $ putMVar (sourceMap alApp) foo
   where
     dt s0 = sourceOffset s1 - sourceOffset s0
     tolerance = 0.1 -- seconds
@@ -247,15 +254,15 @@ updateSource alApp ms0 s1 = do
     -- TODO ---------------------------------
 
     useReverseBuffer s0 sid = do
-        x <- liftIO $ readIORef (bufferMap alApp)
+        --x <- liftIO $ readIORef (bufferMap alApp)
         -- when already using reverse buffer, just update the offset case is too far apart.
         -- when not using reverse buffer, check if reverse buffer is ready,
         -- if reverse buffer is ready, fix the offset given the time it took to load and start using it with the source.
         error "not supported yet"
     useFowardsBuffer alApp ms0 sid = do
-        x <- liftIO $ readIORef (bufferMap alApp)
+        --x <- liftIO $ readIORef (bufferMap alApp)
         -- checkIf the buffer been used is the not reversed one, if it isnt, make it be.
-        error "TODO"
+        pure () -- error "TODO"
 
 -----------------------------------------------------------
 lookupALSource :: (MonadIO m) => ALApp -> Map String Source -> m [AL.Source]

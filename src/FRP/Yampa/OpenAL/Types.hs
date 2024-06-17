@@ -27,6 +27,9 @@ import qualified Sound.ALUT.Loaders as AL
 import qualified Sound.OpenAL as AL
 
 -----------------------------------------------------------
+type SV a b = (SF Source b, SF a b -> SF a Source -> SF a Source)
+
+-----------------------------------------------------------
 
 {- | A model of the how the sound elements are defined at
 one specific point in time.
@@ -46,7 +49,7 @@ data Listener = Listener_
     { listenerPosition {-----} :: !(V3 Float) -- meters
     , listenerVelocity {-----} :: !(V3 Float) -- meters per second
     , listenerOrientation {--} :: !(V3 Float, V3 Float) -- meters
-    , listenerGain {---------} :: !Float
+    , listenerGain {---------} :: !Gain
     }
     deriving
         (Eq, Show)
