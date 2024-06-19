@@ -1,26 +1,24 @@
-name:                yampa-openal
-version:             0.1.0.0
-github:              "githubuser/yampa-alut"
+name:                Yampa-OpenAL
+version:             0.1.0.1
+github:              "vitalibarozzi/yampa-openal"
 license:             BSD-3-Clause
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2024 Author name here"
+author:              "J. V. Vitali Barozzi"
+maintainer:          "vitalivitor@gmail.com"
+copyright:           "2024 J. V. Vitali Barozzi"
 
-description:         Please see the README on GitHub at <https://github.com/githubuser/yampa-alut#readme>
+description:         Adapter between Yampa and OpenAL.
 
 dependencies:
 - base >= 4.7 && < 5
 - Yampa
 - OpenAL
 - ALUT
+- containers
 - linear
 - StateVar
-- containers
 - ObjectName
-- tree-diff
-- async
-- vector
 - simple-affine-space
+- template-haskell
 
 ghc-options:
 - -Wall
@@ -35,6 +33,7 @@ ghc-options:
 
 library:
   source-dirs: src
+  generated-other-modules: Paths_Yampa_OpenAL
 
 tests:
   yampa-alut-test:
@@ -45,5 +44,5 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - yampa-openal
+    - Yampa-OpenAL
     - random

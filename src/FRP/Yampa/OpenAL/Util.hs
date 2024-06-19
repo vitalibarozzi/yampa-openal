@@ -12,6 +12,7 @@ module FRP.Yampa.OpenAL.Util (
     _v3ToVector,
     _vectorToV3,
     smooth,
+    appName,
 )
 where
 
@@ -102,3 +103,5 @@ instance (Eq a, Floating a) => VectorSpace (V3 a) a where
     (^+^) = (L.^+^)
     (^-^) = (L.^-^)
     dot = L.dot
+
+appName = "[Yampa-OpenAL]"

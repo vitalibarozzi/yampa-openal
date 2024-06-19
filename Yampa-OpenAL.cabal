@@ -4,32 +4,33 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 
-name:           yampa-openal
-version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/yampa-alut#readme>
-homepage:       https://github.com/githubuser/yampa-alut#readme
-bug-reports:    https://github.com/githubuser/yampa-alut/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2024 Author name here
+name:           Yampa-OpenAL
+version:        0.1.0.1
+description:    Adapter between Yampa and OpenAL.
+homepage:       https://github.com/vitalibarozzi/yampa-openal#readme
+bug-reports:    https://github.com/vitalibarozzi/yampa-openal/issues
+author:         J. V. Vitali Barozzi
+maintainer:     vitalivitor@gmail.com
+copyright:      2024 J. V. Vitali Barozzi
 license:        BSD-3-Clause
 build-type:     Simple
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/yampa-alut
+  location: https://github.com/vitalibarozzi/yampa-openal
 
 library
   exposed-modules:
       FRP.Yampa.OpenAL
       FRP.Yampa.OpenAL.Effects
       FRP.Yampa.OpenAL.IO
+      FRP.Yampa.OpenAL.IO.Update
       FRP.Yampa.OpenAL.Types
       FRP.Yampa.OpenAL.Util
   other-modules:
-      Paths_yampa_openal
+      Paths_Yampa_OpenAL
   autogen-modules:
-      Paths_yampa_openal
+      Paths_Yampa_OpenAL
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
@@ -39,22 +40,20 @@ library
     , OpenAL
     , StateVar
     , Yampa
-    , async
     , base >=4.7 && <5
     , containers
     , linear
     , simple-affine-space
-    , tree-diff
-    , vector
+    , template-haskell
   default-language: Haskell2010
 
 test-suite yampa-alut-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Paths_yampa_openal
+      Paths_Yampa_OpenAL
   autogen-modules:
-      Paths_yampa_openal
+      Paths_Yampa_OpenAL
   hs-source-dirs:
       test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
@@ -64,13 +63,11 @@ test-suite yampa-alut-test
     , OpenAL
     , StateVar
     , Yampa
-    , async
+    , Yampa-OpenAL
     , base >=4.7 && <5
     , containers
     , linear
     , random
     , simple-affine-space
-    , tree-diff
-    , vector
-    , yampa-openal
+    , template-haskell
   default-language: Haskell2010

@@ -13,28 +13,10 @@
 
 module FRP.Yampa.OpenAL.Effects where
 
-import Control.Concurrent
-import Control.Exception
-import Control.Monad
-import Control.Monad.IO.Class
-import Data.Bifunctor
-import Data.IORef
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.Maybe
-import Data.StateVar
 import FRP.Yampa (Time, ReactHandle, SF, (<<<), arr, returnA)
 import qualified FRP.Yampa as Yampa
 import FRP.Yampa.OpenAL.Types
-import FRP.Yampa.OpenAL.Util
-import qualified Sound.ALUT.Initialization as AL
 import qualified Sound.OpenAL as AL
-import System.Timeout
-
-
-type Depth = Double {- 0 to 1 -}
-
-type Rate = Double
 
 
 -----------------------------------------------------------

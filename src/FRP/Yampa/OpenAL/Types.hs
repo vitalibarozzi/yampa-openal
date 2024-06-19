@@ -11,6 +11,13 @@ module FRP.Yampa.OpenAL.Types (
     SourceSignal,
     DeltaSource,
     Pitch,
+    Meters,
+    Angle,
+    Factor,
+    Depth,
+    Rate,
+    SV,
+    MetersPerSecond,
     AL.SoundDataSource (..),
     AL.SourceRelative (..),
     AL.DistanceModel (..),
@@ -25,9 +32,6 @@ import FRP.Yampa (SF)
 import Linear as L
 import qualified Sound.ALUT.Loaders as AL
 import qualified Sound.OpenAL as AL
-
------------------------------------------------------------
-type SV a b = (SF Source b, SF a b -> SF a Source -> SF a Source)
 
 -----------------------------------------------------------
 
@@ -61,21 +65,21 @@ data Source = Source
     { sourceID {-----------------} :: !String -- Static.
     , sourceBufferQueue {--------} :: ![AL.Buffer] -- Static.
     , sourceLoopingMode {--------} :: !AL.LoopingMode -- Static.
+    , sourceRolloffFactor {------} :: !Factor -- Static.
+    , sourceReferenceDistance {--} :: !Meters -- Static.
+    , sourceMaxDistance {--------} :: !Meters -- Static.
+    , sourceRelative {-----------} :: !AL.SourceRelative -- Static.
+    , sourceGainBounds {---------} :: !(Gain, Gain) -- Static.
+    , sourceStartOffset {--------} :: !Float -- Static.
     , sourcePosition {-----------} :: !(V3 Meters)
     , sourceVelocity {-----------} :: !(V3 MetersPerSecond)
     , sourceDirection {----------} :: !(V3 Meters)
     , sourceGain {---------------} :: !Gain
-    , sourceRelative {-----------} :: !AL.SourceRelative
     , sourceConeAngles {---------} :: !(Angle, Angle) -- Outer cone, inner cone, in degrees.
     , sourceConeOuterGain {------} :: !Gain -- Gain outside the cone.
-    , sourceRolloffFactor {------} :: !Factor
-    , sourceReferenceDistance {--} :: !Meters
-    , sourceMaxDistance {--------} :: !Meters
-    , sourceGainBounds {---------} :: !(Gain, Gain)
     , sourceState {--------------} :: !AL.SourceState -- Almost always AL.Playing. Should not be changed directly.
     , sourcePitch {--------------} :: !Pitch -- Almost always one. Should not be changed directly as it causes time dialation.
-    , sourceStartOffset {--------} :: !Float
-    , sourceOffset {-------------} :: !Float
+    , sourceOffset {-------------} :: !Float -- Avoid changing it directly.
     }
     deriving
         (Eq, Show)
@@ -99,7 +103,17 @@ type Angle = Double
 type Pitch = Double
 
 -----------------------------------------------------------
+type Depth = Double {- 0 to 1 -}
+
+-----------------------------------------------------------
+type Rate = Double
+
+-----------------------------------------------------------
 type SourceSignal a = SF a Source
 
 -----------------------------------------------------------
 type DeltaSource = SF Source Source
+
+-----------------------------------------------------------
+-- idea
+type SV a b = (SF Source b, SF a b -> SF a Source -> SF a Source)
