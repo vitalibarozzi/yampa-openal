@@ -18,210 +18,117 @@ import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Bifunctor
-import Data.Map (Map)
+import Data.Map (Map,difference)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.StateVar
 import FRP.Yampa.OpenAL.Types
 import FRP.Yampa.OpenAL.Util
 import qualified Sound.OpenAL as AL
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Data.ObjectName
+import Data.IORef
+import Control.Monad.ST
 
 
------------------------------------------------------------
-updateSoundstage :: (MonadIO m) => ALApp -> Maybe Soundstage -> Soundstage -> m ()
-{-# INLINE updateSoundstage #-}
-updateSoundstage app mss0 ss1 = do
-    case mss0 of
-        Nothing -> do
-            updateSpeedOfSound
-            updateDistanceModel
-            updateDopplerFactor
-            updateListener Nothing (soundstageListener ss1)
-            updateAllSources app Nothing ss1
-        Just ss0 -> do
-            when (soundstageSpeedOfSound ss1 /= soundstageSpeedOfSound ss0) updateSpeedOfSound
-            when (soundstageDistanceModel ss1 /= soundstageDistanceModel ss0) updateDistanceModel
-            when (soundstageDopplerFactor ss1 /= soundstageDopplerFactor ss0) updateDopplerFactor
-            when (soundstageListener ss1 /= soundstageListener ss0) (updateListener (Just (soundstageListener ss0)) (soundstageListener ss1) )
-            updateAllSources app (Just ss0) ss1
-  where
-    updateSpeedOfSound = AL.speedOfSound $= realToFrac (soundstageSpeedOfSound ss1)
-    updateDistanceModel = AL.distanceModel $= soundstageDistanceModel ss1
-    updateDopplerFactor = AL.dopplerFactor $= realToFrac (soundstageDopplerFactor ss1)
-
------------------------------------------------------------
-updateListener :: (MonadIO m) => Maybe Listener -> Listener -> m ()
-{-# INLINE updateListener #-}
-updateListener ml0 l1 = do
-    case ml0 of
-        Nothing -> do
-            updateListenerPos
-            updateListenerVel
-            updateListenerOri
-            updateListenerGai
-        Just l0 -> do
-            -- TODO
-            when True updateListenerPos
-            when True updateListenerVel
-            when True updateListenerOri
-            when True updateListenerGai
-  where
-    updateListenerPos = AL.listenerPosition $= _v3ToVertex (listenerPosition l1)
-    updateListenerVel = AL.listenerVelocity $= _v3ToVector (listenerVelocity l1)
-    updateListenerOri = AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation l1)
-    updateListenerGai = AL.listenerGain $= realToFrac (listenerGain l1)
-
------------------------------------------------------------
-updateAllSources :: forall m. (MonadIO m) => ALApp -> Maybe Soundstage -> Soundstage -> m ()
-{-# INLINE updateAllSources #-}
-updateAllSources alApp mss0 ss1 = do
-    case mss0 of
-        Nothing -> do
-            __ <- forM_ (soundstageSources ss1) (updateSource alApp Nothing)
-            __ <- AL.play =<< lookupSource alApp (soundstageSources ss1)
-            pure ()
-        Just ss0 -> do
-            let (deleted, notDeleted) = splitMissingSources (soundstageSources ss0) (soundstageSources ss1)
-            let (created, notCreated) = splitCreatedSources (soundstageSources ss0) (soundstageSources ss1)
-            let (modified, _________) = splitModifiedSources notDeleted notCreated
-            -------------------------
-            -- update new sourcs
-            __ <- forM_ (soundstageSources ss1) \src -> do
-                        (source :: AL.Source) <- AL.genObjectName
-                        liftIO $ AL.buffer source $= Just (head (sourceBufferQueue src)) -- TODO
-                        liftIO (modifyMVar_ (sourceMap alApp) (pure . Map.insert (sourceID src) source))
-                        updateSource @m alApp Nothing src
-            -- update modified sources
-            --__ <- undefined
-            -----------------------
-            __ <- AL.play =<< lookupSource alApp (playingFrom created <> playingFrom modified)
-            --__ <- AL.stop =<< lookupALSource alApp (deleted <> stoppedFrom modified)
-            --__ <- AL.pause =<< lookupALSource alApp (pausedFrom created <> pausedFrom modified)
-            pure ()
-  where
-    splitMissingSources s0 s1 = (Map.difference s0 s1, Map.intersection s1 s0)
-    splitCreatedSources s0 s1 = (Map.difference s1 s0, Map.intersection s1 s0)
-    splitModifiedSources s0 s1 = (foo s0 (Map.intersection s1 s0), Map.intersection s1 s0)
-    playingFrom = Map.filter ((Playing ==) . sourceState)
-    stoppedFrom = Map.filter ((Stopped ==) . sourceState)
-    pausedFrom = Map.filter ((Paused ==) . sourceState)
-    -- TODO bad name
-    foo s0 =
-        foldr
-            ( \y@Source{..} mp -> case Map.lookup sourceID s0 of
-                Just x@Source{} ->
-                    if x /= y
-                        then undefined -- TODO
-                        else mp
-                Nothing -> undefined -- TODO
-            )
-            mempty
-
------------------------------------------------------------
-updateSource ::
-    (MonadIO m) =>
-    ALApp ->
-    Maybe Source ->
-    Source ->
+soundstage :: 
+    (MonadIO m) => 
+    ALApp -> 
+    Maybe Soundstage -> 
+    Soundstage -> 
     m ()
-{-# INLINE updateSource #-}
-updateSource alApp ms0 s1 = do
-    foo <- liftIO (takeMVar (sourceMap alApp))
-    let sid = fromJust (Map.lookup (sourceID s1) foo)
-    AL.gainBounds sid $= let foox = realToFrac (fst (sourceGainBounds s1)) in (foox, realToFrac (snd (sourceGainBounds s1)))
-    AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
-    AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
-    AL.sourceRelative sid $= sourceRelative s1
-    AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
-    AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
-    AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
-    AL.pitch sid $= realToFrac (abs (sourcePitch s1))
-    AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
-    AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
-    AL.sourceGain sid $= realToFrac (abs (sourceGain s1))
-    AL.direction sid $= _v3ToVector (sourceDirection s1)
-    AL.secOffset sid $= realToFrac (abs (sourceStartOffset s1))
-{-
-    case ms0 of
-        Nothing -> do
-            AL.gainBounds sid $= let foox = realToFrac (fst (sourceGainBounds s1)) in (foox, realToFrac (snd (sourceGainBounds s1)))
-            AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
-            AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
-            AL.sourceRelative sid $= sourceRelative s1
-            AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
-            AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
-            AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
-            AL.pitch sid $= realToFrac (abs (sourcePitch s1))
-            AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
-            AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
-            AL.sourceGain sid $= realToFrac (abs (sourceGain s1))
-            AL.direction sid $= _v3ToVector (sourceDirection s1)
-            AL.secOffset sid $= realToFrac (abs (sourceStartOffset s1))
-            case sourceOffset s1 of
-                o1
-                    | o1 > 0 -> useFowardsBuffer alApp Nothing sid
-                    | o1 < 0 -> useReverseBuffer Nothing sid
-                    | otherwise -> useFowardsBuffer alApp Nothing sid
-        Just s0 -> do
-            when (sourcePosition s0 /= sourcePosition s1) $ AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
-            when (sourceVelocity s0 /= sourceVelocity s1) $ AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
-            when (sourceGain s0 /= sourceGain s1) $ AL.sourceGain sid $= realToFrac (abs (sourceGain s1))
-            when (sourceDirection s0 /= sourceDirection s1) $ AL.direction sid $= _v3ToVector (sourceDirection s1)
-            when (sourcePitch s1 /= sourcePitch s0) (AL.pitch sid $= realToFrac (abs (sourcePitch s1)))
-            when (sourceStartOffset s1 /= sourceStartOffset s0) do
-                AL.gainBounds sid $= let foox = realToFrac (fst (sourceGainBounds s1)) in (foox, realToFrac (snd (sourceGainBounds s1)))
-                AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
-                AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
-                AL.sourceRelative sid $= sourceRelative s1
-                AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
-                AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
-                AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
-                AL.secOffset sid $= realToFrac (abs (sourceStartOffset s1))
-            when (sourceOffset s1 /= sourceOffset s0 && abs (sourceOffset s1 - sourceOffset s0) > tolerance) do
-                if {-going backwards-} 0 > sourceOffset s1 - sourceOffset s0
-                    then useReverseBuffer s0 sid
-                    else useFowardsBuffer alApp s0 sid
-                correctOffset sid s0
-                -}
-    liftIO $ putMVar (sourceMap alApp) foo
+soundstage alApp mss0 ss1
+    | newSoundstage = updateForce True
+    | otherwise     = updateForce False
   where
-    dt s0 = sourceOffset s1 - sourceOffset s0
-    tolerance = 0.1 -- seconds
-    alReactionTime = 0.002
-    correctOffset sid s0 =
-        AL.secOffset sid $= realToFrac (abs (sourceOffset s1) - alReactionTime + abs (dt s0))
+    newSoundstage = isNothing mss0
+    updateForce force = do
+        when (force || True) _updateSpeedOfSound
+        when (force || True) _updateDistanceModel
+        when (force || True) _updateDopplerFactor
+        when (force || True) _updateListenerPos
+        when (force || True) _updateListenerVel
+        when (force || True) _updateListenerOri
+        when (force || True) _updateListenerGai
+        when (force || True) (_updateSources force)
+    _updateSources force = do
+        let previousSrcs   :: Set String = undefined -- maybe mempty soundstageSources mss0
+        let currentSrcs    :: Set String = undefined
+        let deletedSources :: Set String = Set.difference previousSrcs currentSrcs
+        unless (null deletedSources) (AL.stop $ undefined deletedSources)
+        let createdSources :: Set String = Set.difference currentSrcs previousSrcs 
+        unless (null createdSources) do
+            liftIO $ _updateFooSources (undefined $ soundstageSources ss1) True createdSources
+            let pausedSources :: Set String = Set.filter ((== Paused) . undefined) createdSources
+            let stoppedSources :: Set String = Set.filter ((== Stopped) . undefined) createdSources
+            liftIO $ unless (null pausedSources) (AL.stop  $ undefined stoppedSources)
+            liftIO $ unless (null pausedSources) (AL.pause $ undefined pausedSources)
+        let updatedSources :: Set String = Set.intersection previousSrcs currentSrcs
+        unless (null updatedSources) do
+            let stoppedSources :: Set String = Set.filter ((== Stopped) . undefined) updatedSources
+            let pausedSources  :: Set String = Set.filter ((== Paused) . undefined) updatedSources
+            liftIO $ unless (null stoppedSources) (AL.stop $ undefined stoppedSources)
+            liftIO $ unless (null pausedSources)  (AL.pause $ undefined pausedSources)
+            liftIO $ _updateFooSources (undefined $ soundstageSources ss1) force updatedSources
+        let playingSources :: Set String = Set.filter ((== Playing) . undefined) currentSrcs -- undefined :: Map String Source
+        unless (null playingSources) do
+            liftIO $ AL.play (undefined playingSources)
+    _updateSpeedOfSound = AL.speedOfSound $= realToFrac (abs (soundstageSpeedOfSound ss1))
+    _updateDistanceModel = AL.distanceModel $= soundstageDistanceModel ss1
+    _updateDopplerFactor = AL.dopplerFactor $= realToFrac (abs (soundstageDopplerFactor ss1))
+    _updateListenerPos = AL.listenerPosition $= _v3ToVertex (listenerPosition $ soundstageListener ss1)
+    _updateListenerVel = AL.listenerVelocity $= _v3ToVector (listenerVelocity $ soundstageListener ss1)
+    _updateListenerOri = AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation $ soundstageListener ss1)
+    _updateListenerGai = AL.listenerGain $= realToFrac (abs (listenerGain (soundstageListener ss1)))
+    _updateFooSources sources force sourcePool = do
+        srcMap <- liftIO $ takeMVar (sourceMap alApp)
+        -- TODO use ST here to pass this map around below
+        --runST do 
+        --    srcMapSTRef <- undefined
+        forM_ sourcePool \sname -> do
+                s1 <- fromMaybe (error "bug") (Map.lookup sname sources)
+                liftIO do
+                    case Map.lookup sname srcMap of
+                        Nothing -> do 
+                            sid <- genObjectName
+                            AL.buffer sid $= Just (sourceBufferQueue s1) 
+                            AL.gainBounds sid $= let foox = realToFrac (fst (sourceGainBounds s1)) in (foox, realToFrac (snd (sourceGainBounds s1)))
+                            AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+                            AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
+                            AL.sourceRelative sid $= sourceRelative s1
+                            AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
+                            AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
+                            AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
+                            AL.pitch sid $= realToFrac (abs (sourcePitch s1))
+                            AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
+                            AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
+                            AL.sourceGain sid $= realToFrac (abs (sourceGain s1))
+                            AL.direction sid $= _v3ToVector (sourceDirection s1)
+                            AL.secOffset sid $= realToFrac (abs (sourceStartOffset s1))
+                            writeIORef undefined srcMap
+                        Just (_s0,sid,_buff,_revBuff) -> do
+                            when (force || True) $ AL.gainBounds sid $= let foox = realToFrac (fst (sourceGainBounds s1)) in (foox, realToFrac (snd (sourceGainBounds s1)))
+                            when (force || True) $ AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+                            when (force || True) $ AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
+                            when (force || True) $ AL.sourceRelative sid $= sourceRelative s1
+                            when (force || True) $ AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
+                            when (force || True) $ AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
+                            when (force || True) $ AL.coneOuterGain sid $= realToFrac (sourceConeOuterGain s1)
+                            when (force || True) $ AL.pitch sid $= realToFrac (abs (sourcePitch s1))
+                            when (force || True) $ AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
+                            when (force || True) $ AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
+                            when (force || True) $ AL.sourceGain sid $= realToFrac (abs (sourceGain s1))
+                            when (force || True) $ AL.direction sid $= _v3ToVector (sourceDirection s1)
+                            when force $ AL.secOffset sid $= realToFrac (abs (sourceStartOffset s1))
+                            writeIORef undefined srcMap
+                pure srcMap
 
-    -- TODO ---------------------------------
-
-    useReverseBuffer s0 sid = do
-        --x <- liftIO $ readIORef (bufferMap alApp)
-        -- when already using reverse buffer, just update the offset case is too far apart.
-        -- when not using reverse buffer, check if reverse buffer is ready,
-        -- if reverse buffer is ready, fix the offset given the time it took to load and start using it with the source.
-        error "not supported yet"
-    useFowardsBuffer alApp ms0 sid = do
-        --x <- liftIO $ readIORef (bufferMap alApp)
-        -- checkIf the buffer been used is the not reversed one, if it isnt, make it be.
-        pure () -- error "TODO"
 
 -----------------------------------------------------------
 
 -- | Internal.
 data ALApp = ALApp
-    { sourceMap :: !(MVar (Map String AL.Source))
+    { sourceMap :: !(MVar (Map String (Source, AL.Source, AL.Buffer, Maybe AL.Buffer)))
+    , createdMap :: !(IORef (Set String))
     }
-
-
------------------------------------------------------------
-lookupSource :: (MonadIO m) => ALApp -> Map String Source -> m [AL.Source]
-{-# INLINE lookupSource #-}
-lookupSource alApp =
-    fmap (mapMaybe snd . Map.toList) . mapM lookup_
-  where
-    lookup_ Source{..} = do
-        mp <- liftIO $ takeMVar (sourceMap alApp)
-        case Map.lookup sourceID mp of
-            Just sid -> do
-                liftIO $ putMVar (sourceMap alApp) mp
-                pure (Just sid)
-            ________ -> error $ "bug: couldn't find '" <> sourceID <> "'"

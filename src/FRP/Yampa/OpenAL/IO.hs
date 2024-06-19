@@ -16,9 +16,6 @@ module FRP.Yampa.OpenAL.IO (
     withSoundstage,
     withAL,
     reactInitSoundstage,
-    updateSoundstage,
-    updateListener,
-    updateSource,
 )
 where
 
@@ -66,8 +63,8 @@ withAL ::
 withAL clientErrorHandler k = do
     AL.runALUT appName [] \_ _ -> do
         ___ <- liftIO (forkIO (forever handleError))
-        ref <- liftIO (newMVar mempty)
-        k (ALApp ref)
+        --ref <- liftIO (newMVar mempty)
+        k undefined -- (ALApp ref)
   where
     handleError = do
         threadDelay 1 
@@ -93,7 +90,7 @@ reactInitSoundstage a sf alApp = liftIO do
     actuate ssRef _ updated s1 = do
         when updated do
             takeMVar ssRef >>= \case
-                Nothing -> updateSoundstage alApp Nothing s1
-                Just s0 -> updateSoundstage alApp (Just s0) s1
+                Nothing -> soundstage alApp Nothing s1
+                Just s0 -> soundstage alApp (Just s0) s1
             putMVar ssRef (Just s1)
         pure updated

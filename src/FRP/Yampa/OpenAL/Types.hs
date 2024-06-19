@@ -28,7 +28,7 @@ module FRP.Yampa.OpenAL.Types (
 where
 
 import Data.Map (Map)
-import FRP.Yampa (SF)
+import FRP.Yampa (SF,Time)
 import Linear as L
 import qualified Sound.ALUT.Loaders as AL
 import qualified Sound.OpenAL as AL
@@ -44,6 +44,7 @@ data Soundstage = Soundstage
     , soundstageSpeedOfSound {---} :: !MetersPerSecond
     , soundstageDistanceModel {--} :: !AL.DistanceModel
     , soundstageListener {-------} :: !Listener
+    , soundstageTime {-----------} :: !Time
     }
     deriving
         (Eq, Show)
@@ -63,14 +64,14 @@ data Listener = Listener_
 -- | A source of audio in space.
 data Source = Source
     { sourceID {-----------------} :: !String -- Static.
-    , sourceBufferQueue {--------} :: ![AL.Buffer] -- Static.
+    , sourceBufferQueue {--------} :: !AL.Buffer -- Static. TODO not a queue anymore
     , sourceLoopingMode {--------} :: !AL.LoopingMode -- Static.
     , sourceRolloffFactor {------} :: !Factor -- Static.
     , sourceReferenceDistance {--} :: !Meters -- Static.
     , sourceMaxDistance {--------} :: !Meters -- Static.
     , sourceRelative {-----------} :: !AL.SourceRelative -- Static.
     , sourceGainBounds {---------} :: !(Gain, Gain) -- Static.
-    , sourceStartOffset {--------} :: !Float -- Static.
+    , sourceStartOffset {--------} :: !Time -- Static.
     , sourcePosition {-----------} :: !(V3 Meters)
     , sourceVelocity {-----------} :: !(V3 MetersPerSecond)
     , sourceDirection {----------} :: !(V3 Meters)
@@ -79,7 +80,7 @@ data Source = Source
     , sourceConeOuterGain {------} :: !Gain -- Gain outside the cone.
     , sourceState {--------------} :: !AL.SourceState -- Almost always AL.Playing. Should not be changed directly.
     , sourcePitch {--------------} :: !Pitch -- Almost always one. Should not be changed directly as it causes time dialation.
-    , sourceOffset {-------------} :: !Float -- Avoid changing it directly.
+    , sourceOffset {-------------} :: !Time -- Avoid changing it directly.
     }
     deriving
         (Eq, Show)

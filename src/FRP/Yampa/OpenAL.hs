@@ -332,7 +332,7 @@ movement of the source based on its velocity.
 source_ ::
     -- statics
     String -> -- name
-    [Buffer] -> -- queue
+    Buffer -> -- queue
     DTime -> -- start at
     (Double, Double) ->
     AL.SourceRelative ->
@@ -352,7 +352,7 @@ source_ name queue startAt gainBounds relative rolloff position0 pitch0 velocity
     -- calculate the change in position
     dx <- Yampa.integral -< velocity0
     -- Stop at end of offset.
-    state <- Yampa.delay 0 state0 -< state0
+    state1 <- Yampa.delay 0 state0 -< state0
     returnA
         -<
             Source
@@ -366,10 +366,10 @@ source_ name queue startAt gainBounds relative rolloff position0 pitch0 velocity
                 , sourceRolloffFactor = realToFrac rolloff
                 , sourceConeOuterGain = 0.01
                 , sourceConeAngles = angles -- (360, 360)
-                , sourceState = state
+                , sourceState = state1
                 , sourcePitch = pitch0
                 , sourceStartOffset = realToFrac startAt
-                , sourceOffset = realToFrac (startAt + (correction state * t * pitch0))
+                , sourceOffset = realToFrac (startAt + (correction state1 * t * pitch0))
                 , sourcePosition = position0 + dx
                 , sourceVelocity = velocity0
                 , sourceDirection = direction
