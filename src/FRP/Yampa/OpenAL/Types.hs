@@ -35,6 +35,42 @@ import Linear as L
 import qualified Sound.ALUT.Loaders as AL
 import qualified Sound.OpenAL as AL
 import qualified Sound.OpenAL.AL.Buffer as AL
+import Data.IORef
+import Control.Concurrent.MVar
+import Data.Set (Set)
+
+
+
+-- | Internal.
+data ALApp = ALApp
+    { sourceMap :: !(MVar (Map String AL.Source))
+    , createdMap :: !(IORef (Set String))
+    }
+
+-----------------------------------------------------------
+type MetersPerSecond = Float
+
+-----------------------------------------------------------
+type Meters = Float
+
+-----------------------------------------------------------
+type Factor = Float
+
+-----------------------------------------------------------
+type Gain = Double
+
+-----------------------------------------------------------
+type Angle = Double
+
+-----------------------------------------------------------
+type Pitch = Double
+
+-----------------------------------------------------------
+type Depth = Double {- 0 to 1 -}
+
+-----------------------------------------------------------
+type Rate = Double
+
 
 {-
 -----------------------------------------------------------
@@ -64,40 +100,3 @@ data Listener = Listener_
         (Eq, Show)
 
 -}
-
------------------------------------------------------------
-type MetersPerSecond = Float
-
------------------------------------------------------------
-type Meters = Float
-
------------------------------------------------------------
-type Factor = Float
-
------------------------------------------------------------
-type Gain = Double
-
------------------------------------------------------------
-type Angle = Double
-
------------------------------------------------------------
-type Pitch = Double
-
------------------------------------------------------------
-type Depth = Double {- 0 to 1 -}
-
------------------------------------------------------------
-type Rate = Double
-
------------------------------------------------------------
---data SourceState 
-  --  = Playing Time Time BuffQueue AL.LoopingMode
- --   | Paused  Time Time BuffQueue AL.LoopingMode
- --   | Stopped           BuffQueue AL.LoopingMode
- -- deriving (Eq,Show)
------------------------------------------------------------
---newtype BuffQueue = BuffQueue [(AL.Buffer,AL.BufferData ())] deriving (Eq,Show)
------------------------------------------------------------
---data Status = Created | Deleted | Modified deriving (Eq,Show)
---, sourceStartOffset {--------} :: !Time -- Static.
---, sourceStatus {-------------} :: !Status

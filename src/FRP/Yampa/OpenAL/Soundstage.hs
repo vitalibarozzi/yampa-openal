@@ -14,7 +14,7 @@
 module FRP.Yampa.OpenAL.Soundstage
 where
 
-import FRP.Yampa.OpenAL.IO.Update
+import FRP.Yampa.OpenAL.Listener
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
@@ -39,23 +39,10 @@ import Data.Bifunctor
 one specific point in time.
 -}
 data Soundstage = Soundstage
-    { soundstageSources {--------} :: !(Map String Source)
+    { soundstageSources {--------} :: !(Map AL.Source Source)
     , soundstageDopplerFactor {--} :: !Factor
     , soundstageSpeedOfSound {---} :: !MetersPerSecond
     , soundstageDistanceModel {--} :: !AL.DistanceModel
     , soundstageListener {-------} :: !Listener
     , soundstageTime {-----------} :: !(Maybe Time)
     }
-    deriving
-        (Eq, Show)
-
------------------------------------------------------------
-data Listener = Listener_
-    { listenerPosition {-----} :: !(V3 Float) -- meters
-    , listenerVelocity {-----} :: !(V3 Float) -- meters per second
-    , listenerOrientation {--} :: !(V3 Float, V3 Float) -- meters
-    , listenerGain {---------} :: !Gain
-    }
-    deriving
-        (Eq, Show)
-

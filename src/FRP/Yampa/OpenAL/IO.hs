@@ -15,8 +15,6 @@
 
 module FRP.Yampa.OpenAL.IO where
 
-import FRP.Yampa.OpenAL.IO.Update
-import FRP.Yampa.OpenAL.IO.Update
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
@@ -39,6 +37,8 @@ import qualified Sound.OpenAL.AL.Buffer as AL
 import Data.IORef
 import Data.Bifunctor
 import FRP.Yampa.OpenAL.Soundstage
+import FRP.Yampa.OpenAL.Listener
+import FRP.Yampa.OpenAL.Source
 
 -------------------------------------------------------------------------------
 -- SIMPLE API -----------------------------------------------------------------
@@ -52,9 +52,9 @@ withSoundstage ::
     (ReactHandle a Soundstage -> m b) ->
     m b
 {-# INLINE withSoundstage #-}
-withSoundstage a sf reactimate =
+withSoundstage a sf reactimate_ =
     withAL Nothing do
-        reactimate <=< reactInitSoundstage a sf
+        reactimate_ <=< reactInitSoundstage a sf
 
 -------------------------------------------------------------------------------
 -- ADVANCED API ---------------------------------------------------------------
@@ -103,6 +103,7 @@ reactInitSoundstage a sf alApp = liftIO do
             putMVar ssRef (Just s1)
         pure updated
 
+-----------------------------------------------------------
 soundstageIO :: 
     (MonadIO m) => 
     ALApp -> 
@@ -118,33 +119,23 @@ soundstageIO alApp mss0 ss1 = do
     ($=?) AL.orientation      True (bimap _v3ToVector _v3ToVector (listenerOrientation $ soundstageListener ss1))
     ($=?) AL.listenerGain     True (abs (realToFrac $ listenerGain (soundstageListener ss1)))
 
-    playingRef <- liftIO (newIORef [])
-    stoppedRef <- liftIO (newIORef [])
-    pausedRef  <- liftIO (newIORef [])
 
-    {-
-    let allSources = fromMaybe [] (sourcesByID <$> mss0) <> sourcesByID (soundstageSources ss1) -- both from the past and from now, by id
-    forM_ allSources \s1 -> do
-        case sourceStatus s1 of 
-            Created  -> createSource >> updateSource
-            Deleted  -> deleteSource
-            Modified -> updateSource
+    case mss0 of
+        Nothing -> do
+            let sources1 = soundstageSources ss1
+            forM_ sources1 \src -> do
+                error . show $ sources1
+            
+        Just ss0 -> do
+            let sources0 = soundstageSources ss0
+            let sources1 = soundstageSources ss1
+            forM_ sources1 \src1 -> do
+                case Map.lookup (readSourceID src1) sources0 of
+                    Just src0 -> updateSource src0 src1
+                    Nothing -> updateSource (emptySource (readSourceID src1)) src1
 
-        case sourceState s1 of
-            Just Playing -> liftIO (modifyIORef playingRef (s1 :))
-            Just Stopped -> liftIO (modifyIORef stoppedRef (s1 :))
-            Just Paused  -> liftIO (modifyIORef pausedRef  (s1 :))
-            ____________ -> pure ()
-    -}
 
-    playing <- liftIO (readIORef playingRef)
-    AL.play (undefined <$> playing)
 
-    paused <- liftIO (readIORef pausedRef)
-    AL.pause (undefined <$> paused)
-
-    stopped <- liftIO (readIORef stoppedRef)
-    AL.stop (undefined <$> stopped)
 
 -- | Constructor with default values from a position.
 listener :: V3 Float -> SF a Listener
@@ -170,7 +161,7 @@ soundstage sources = proc a -> do
 
 -----------------------------------------------------------
 -- For when you want to change the collection of source
--- signals of the soundstage at some point.
+-- signals of the soundstage at some point. (You probably will.)
 soundstage_ ::
     Float ->
     AL.DistanceModel ->
@@ -203,3 +194,121 @@ listener_ x0 v0 ori0 gain0 = proc _ -> do
     dx <- Yampa.integral -< v0
     returnA -< Listener_ (x0 + dx) v0 ori0 (realToFrac gain0)
 
+{-
+
+    
+sourcesByID = undefined
+createSource = undefined
+deleteSource = undefined
+updateSource = undefined
+        {-
+        let sid = undefined    
+        ($=?) (AL.gainBounds sid)         True (let foox = fst (sourceGainBounds s1) in (foox, snd (sourceGainBounds s1)))
+        ($=?) (AL.coneAngles sid)         True (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+        ($=?) (AL.maxDistance sid)        True (realToFrac (sourceMaxDistance s1))
+        ($=?) (AL.sourceRelative sid)     True (sourceRelative s1)
+        ($=?) (AL.rolloffFactor sid)      True (realToFrac (sourceRolloffFactor s1))
+        ($=?) (AL.referenceDistance sid)  True (realToFrac (sourceReferenceDistance s1))
+        ($=?) (AL.coneOuterGain sid)      True (sourceConeOuterGain s1)
+        ($=?) (AL.pitch sid)              True (realToFrac (abs (sourcePitch s1)))
+        ($=?) (AL.sourcePosition sid)     True (_v3ToVertex (sourcePosition s1))
+        ($=?) (AL.sourceVelocity sid)     True (_v3ToVector (sourceVelocity s1))
+        ($=?) (AL.sourceGain sid)         True (realToFrac (abs (sourceGain s1)))
+        ($=?) (AL.direction sid)          True (_v3ToVector (sourceDirection s1))
+        ($=?) (AL.secOffset sid)          True (realToFrac (abs (sourceStartOffset s1)))
+        -}
+
+-----------------------------------------------------------
+
+    -- sid <- genObjectName
+    -- AL.buffer sid $= Just (sourceBuffer s1) 
+        --let previousSrcs   :: Set String = undefined -- maybe mempty soundstageSources mss0
+        --let currentSrcs    :: Set String = undefined
+        --let deletedSources :: Set String = Set.difference previousSrcs currentSrcs
+        --unless (null deletedSources) (AL.stop $ undefined deletedSources)
+        --let createdSources :: Set String = Set.difference currentSrcs previousSrcs 
+        --unless (null createdSources) do
+        --    liftIO $ _updateFooSources (undefined $ soundstageSources ss1) True createdSources
+        --    let pausedSources :: Set String = Set.filter ((== Paused) . undefined) createdSources
+        --    let stoppedSources :: Set String = Set.filter ((== Stopped) . undefined) createdSources
+        --    liftIO $ unless (null pausedSources) (AL.stop  $ undefined stoppedSources)
+        --    liftIO $ unless (null pausedSources) (AL.pause $ undefined pausedSources)
+        --let updatedSources :: Set String = Set.intersection previousSrcs currentSrcs
+        --unless (null updatedSources) do
+        --    let stoppedSources :: Set String = Set.filter ((== Stopped) . undefined) updatedSources
+        --    let pausedSources  :: Set String = Set.filter ((== Paused) . undefined) updatedSources
+        --    liftIO $ unless (null stoppedSources) (AL.stop $ undefined stoppedSources)
+        --    liftIO $ unless (null pausedSources)  (AL.pause $ undefined pausedSources)
+        --    liftIO $ _updateFooSources (undefined $ soundstageSources ss1) force updatedSources
+        --let playingSources :: Set String = Set.filter ((== Playing) . undefined) currentSrcs -- undefined :: Map String Source
+        --unless (null playingSources) do
+        --    liftIO $ AL.play (undefined playingSources)
+                            --Just (_s0,sid,_buff) -> do
+                            --    when (force || True) $ AL.gainBounds sid $= let foox = fst (sourceGainBounds s1) in (foox, snd (sourceGainBounds s1))
+                            --    when (force || True) $ AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+                            --    when (force || True) $ AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
+                            --    when (force || True) $ AL.sourceRelative sid $= sourceRelative s1
+                            ----    when (force || True) $ AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
+                            --    when (force || True) $ AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
+                            --    when (force || True) $ AL.coneOuterGain sid $= sourceConeOuterGain s1
+                            --    when (force || True) $ AL.pitch sid $= realToFrac (abs (sourcePitch s1))
+                            --    when (force || True) $ AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
+                            --    when (force || True) $ AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
+                            --    when (force || True) $ AL.sourceGain sid $= realToFrac (abs (sourceGain s1))
+                            --    when (force || True) $ AL.direction sid $= _v3ToVector (sourceDirection s1)
+                            --    when force $ AL.secOffset sid $= realToFrac (abs (sourceStartOffset s1))
+                            --    writeIORef undefined srcMap
+            --srcMap <- liftIO $ takeMVar (sourceMap alApp)
+            -- TODO use ST here to pass this map around below
+            --runST do 
+            --    srcMapSTRef <- undefined
+            --forM_ sourcePool \sname -> do
+                    --s1 <- fromMaybe (error "bug") (Map.lookup sname sources)
+                    --liftIO do
+                        --case Map.lookup sname srcMap of
+                         --   Nothing -> do 
+                          --      sid <- genObjectName
+                           --     AL.buffer sid $= Just (sourceBuffer s1) 
+                            --    AL.gainBounds sid $= let foox = fst (sourceGainBounds s1) in (foox, snd (sourceGainBounds s1))
+                           --     AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+                            --    AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
+                            --    AL.sourceRelative sid $= sourceRelative s1
+                             --   AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
+                              --  AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
+                            --    AL.coneOuterGain sid $= sourceConeOuterGain s1
+                             --   AL.pitch sid $= realToFrac (abs (sourcePitch s1))
+                             --   AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
+                             --   AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
+                             --   AL.sourceGain sid $= realToFrac (abs (sourceGain s1))
+                             --   AL.direction sid $= _v3ToVector (sourceDirection s1)
+                             --   AL.secOffset sid $= realToFrac (abs (sourceStartOffset s1))
+                             --   writeIORef undefined srcMap
+                             --   undefined
+                    --pure srcMap
+                    ---}
+    --playingRef <- liftIO (newIORef [])
+    --stoppedRef <- liftIO (newIORef [])
+    --pausedRef  <- liftIO (newIORef [])
+    --playing <- liftIO (readIORef playingRef)
+    --AL.play (undefined <$> playing)
+
+    --paused <- liftIO (readIORef pausedRef)
+    --AL.pause (undefined <$> paused)
+
+    --stopped <- liftIO (readIORef stoppedRef)
+    --AL.stop (undefined <$> stopped)
+    -- TODO
+    {-
+    let allSources = fromMaybe [] (sourcesByID <$> mss0) <> sourcesByID (soundstageSources ss1) -- both from the past and from now, by id
+    forM_ allSources \s1 -> do
+        case sourceStatus s1 of 
+            Created  -> createSource >> updateSource
+            Deleted  -> deleteSource
+            Modified -> updateSource
+
+        case sourceState s1 of
+            Just Playing -> liftIO (modifyIORef playingRef (s1 :))
+            Just Stopped -> liftIO (modifyIORef stoppedRef (s1 :))
+            Just Paused  -> liftIO (modifyIORef pausedRef  (s1 :))
+            ____________ -> pure ()
+    -}
