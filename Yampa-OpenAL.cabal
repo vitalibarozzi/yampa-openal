@@ -25,6 +25,7 @@ library
       FRP.Yampa.OpenAL.Effects
       FRP.Yampa.OpenAL.IO
       FRP.Yampa.OpenAL.IO.Update
+      FRP.Yampa.OpenAL.Soundstage
       FRP.Yampa.OpenAL.Source
       FRP.Yampa.OpenAL.Types
       FRP.Yampa.OpenAL.Util

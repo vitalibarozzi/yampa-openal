@@ -32,17 +32,23 @@ module FRP.Yampa.OpenAL.Source
     , setOffset
     , setState
     , withPitch
+    , updateSource
+    , readSourceID
     )
 where
 
-import FRP.Yampa.OpenAL.Util ()
+import Control.Monad
+import FRP.Yampa.OpenAL.Util
 import qualified Sound.OpenAL.AL.Buffer as AL
 import Data.Maybe
+import qualified Data.Map as Map
 import FRP.Yampa
 import qualified FRP.Yampa as Yampa
 import FRP.Yampa.OpenAL.Types
+import Control.Concurrent.MVar
 import Linear.V3
 import qualified Sound.OpenAL as AL
+import FRP.Yampa.OpenAL.IO.Update
 
 -----------------------------------------------------------
 
@@ -230,3 +236,47 @@ withPitch pitchSF src = do
                     (Just $ sourceLoopingMode src0)
         rSwitch identity -< (src0, tag pitchChanged newSource)
 
+-----------------------------------------------------------
+updateSource :: ALApp -> Source -> Source -> IO ()
+updateSource alApp s0 s1 = do 
+    sourceMap_ <- takeMVar (sourceMap alApp)
+    let msid = Map.lookup (_sourceID s1) sourceMap_
+    case msid of 
+        Nothing -> undefined
+        Just sid -> do
+            --, sourceBufferQueue {---------} :: ![AL.Buffer]
+            -- TODO verify how they differ, not if they just differ. how they differ will inform what to do
+            -- we will also need to know how many we already processed, and so
+            -- in some cases we just need to update the queue we new stuff, in others we may have to wait and then replace, and so forth
+            -- maybe for now imagine they are NOT changing
+
+            let foo = _sourceState s0 == AL.Initial
+                   || _sourceState s0 == AL.Stopped
+                   || _sourceState s0 == AL.Paused 
+            let bar = _sourceState s0 == AL.Stopped
+                   || _sourceState s0 == AL.Initial
+            let qux = _sourceState s0 == AL.Initial
+                   || _sourceState s0 == AL.Paused
+
+            when (foo && _sourceState s1 == AL.Playing) (AL.play [sid])
+            when (bar && _sourceState s1 == AL.Paused) (AL.pause [sid])
+            when (qux && _sourceState s1 == AL.Stopped) (AL.stop [sid])
+
+            ($=?) (AL.secOffset sid)          (_sourceState s1 == AL.Initial     )    (realToFrac (_sourceOffset s1))
+            ($=?) (AL.coneAngles sid)         (_sourcePitch s1 /= _sourcePitch s0)    (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+            ($=?) (AL.coneOuterGain sid)      (_sourcePitch s1 /= _sourcePitch s0)    (sourceConeOuterGain s1)
+            ($=?) (AL.direction sid)          (_sourcePitch s1 /= _sourcePitch s0)    (_v3ToVector (sourceDirection s1))
+            ($=?) (AL.gainBounds sid)         (_sourcePitch s1 /= _sourcePitch s0)    (let foox = fst (sourceGainBounds s1) in (foox, snd (sourceGainBounds s1)))
+            ($=?) (AL.loopingMode sid)        (_sourcePitch s1 /= _sourcePitch s0)    (sourceLoopingMode s1)
+            ($=?) (AL.maxDistance sid)        (_sourcePitch s1 /= _sourcePitch s0)    (realToFrac (sourceMaxDistance s1))
+            ($=?) (AL.pitch sid)              (_sourcePitch s1 /= _sourcePitch s0)    (realToFrac (abs (_sourcePitch s1)))
+            ($=?) (AL.referenceDistance sid)  (_sourcePitch s1 /= _sourcePitch s0)    (realToFrac (sourceReferenceDistance s1))
+            ($=?) (AL.rolloffFactor sid)      (_sourcePitch s1 /= _sourcePitch s0)    (realToFrac (sourceRolloffFactor s1))
+            ($=?) (AL.sourceGain sid)         (_sourcePitch s1 /= _sourcePitch s0)    (realToFrac (abs (sourceGain s1)))
+            ($=?) (AL.sourcePosition sid)     (_sourcePitch s1 /= _sourcePitch s0)    (_v3ToVertex (sourcePosition s1))
+            ($=?) (AL.sourceRelative sid)     (_sourcePitch s1 /= _sourcePitch s0)    (sourceRelative s1)
+            ($=?) (AL.sourceVelocity sid)     (_sourcePitch s1 /= _sourcePitch s0)    (_v3ToVector (sourceVelocity s1))
+    putMVar (sourceMap alApp) sourceMap_
+
+
+readSourceID = _sourceID

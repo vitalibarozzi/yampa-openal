@@ -28,56 +28,15 @@ import qualified Sound.OpenAL as AL
 import Data.Set (Set)
 import Data.ObjectName
 import Data.IORef
-import FRP.Yampa.OpenAL.Source
 
 
 -- | Internal.
 data ALApp = ALApp
-    { sourceMap :: !(MVar (Map String (Source, AL.Source, AL.Buffer)))
+    { sourceMap :: !(MVar (Map String AL.Source))
     , createdMap :: !(IORef (Set String))
     }
 
 {-
-soundstage :: 
-    (MonadIO m) => 
-    ALApp -> 
-    Maybe Soundstage -> 
-    Soundstage -> 
-    m ()
-soundstage alApp mss0 ss1 = do
-    ($=?) AL.speedOfSound     True (abs (realToFrac $ soundstageSpeedOfSound ss1))
-    ($=?) AL.distanceModel    True (soundstageDistanceModel ss1)
-    ($=?) AL.dopplerFactor    True (abs (realToFrac $ soundstageDopplerFactor ss1))
-    ($=?) AL.listenerPosition True (_v3ToVertex (listenerPosition $ soundstageListener ss1))
-    ($=?) AL.listenerVelocity True (_v3ToVector (listenerVelocity $ soundstageListener ss1))
-    ($=?) AL.orientation      True (bimap _v3ToVector _v3ToVector (listenerOrientation $ soundstageListener ss1))
-    ($=?) AL.listenerGain     True (abs (realToFrac $ listenerGain (soundstageListener ss1)))
-
-    playingRef <- liftIO (newIORef [])
-    stoppedRef <- liftIO (newIORef [])
-    pausedRef  <- liftIO (newIORef [])
-
-    let allSources = fromMaybe [] (sourcesByID <$> mss0) <> sourcesByID (soundstageSources ss1) -- both from the past and from now, by id
-    forM_ allSources \s1 -> do
-        case sourceStatus s1 of 
-            Created  -> createSource >> updateSource
-            Deleted  -> deleteSource
-            Modified -> updateSource
-
-        case sourceState s1 of
-            Just Playing -> liftIO (modifyIORef playingRef (s1 :))
-            Just Stopped -> liftIO (modifyIORef stoppedRef (s1 :))
-            Just Paused  -> liftIO (modifyIORef pausedRef  (s1 :))
-            ____________ -> pure ()
-
-    playing <- liftIO (readIORef playingRef)
-    AL.play (undefined <$> playing)
-
-    paused <- liftIO (readIORef pausedRef)
-    AL.pause (undefined <$> paused)
-
-    stopped <- liftIO (readIORef stoppedRef)
-    AL.stop (undefined <$> stopped)
 
     
 sourcesByID = undefined

@@ -36,32 +36,9 @@ import Linear as L
 import qualified Sound.ALUT.Loaders as AL
 import qualified Sound.OpenAL as AL
 import qualified Sound.OpenAL.AL.Buffer as AL
-
------------------------------------------------------------
-
-{- | A model of the how the sound elements are defined at
-one specific point in time.
--}
-data Soundstage = Soundstage
-    { soundstageSources {--------} :: !(Map String Source)
-    , soundstageDopplerFactor {--} :: !Factor
-    , soundstageSpeedOfSound {---} :: !MetersPerSecond
-    , soundstageDistanceModel {--} :: !AL.DistanceModel
-    , soundstageListener {-------} :: !Listener
-    , soundstageTime {-----------} :: !(Maybe Time)
-    }
-    deriving
-        (Eq, Show)
-
------------------------------------------------------------
-data Listener = Listener_
-    { listenerPosition {-----} :: !(V3 Float) -- meters
-    , listenerVelocity {-----} :: !(V3 Float) -- meters per second
-    , listenerOrientation {--} :: !(V3 Float, V3 Float) -- meters
-    , listenerGain {---------} :: !Gain
-    }
-    deriving
-        (Eq, Show)
+import Data.IORef
+import Data.Bifunctor
+import FRP.Yampa.OpenAL.Soundstage
 
 -------------------------------------------------------------------------------
 -- SIMPLE API -----------------------------------------------------------------
@@ -93,8 +70,9 @@ withAL ::
 withAL clientErrorHandler k = do
     AL.runALUT appName [] \_ _ -> do
         ___ <- liftIO (forkIO (forever handleError))
-        --ref <- liftIO (newMVar mempty)
-        k undefined -- (ALApp ref)
+        ref <- liftIO (newMVar mempty)
+        ioref <- liftIO (newIORef mempty)
+        k (ALApp ref ioref)
   where
     handleError = do
         threadDelay 1 
@@ -120,11 +98,53 @@ reactInitSoundstage a sf alApp = liftIO do
     actuate ssRef _ updated s1 = do
         when updated do
             takeMVar ssRef >>= \case
-                Nothing -> undefined -- soundstage alApp Nothing s1
-                Just s0 -> undefined -- soundstage alApp (Just s0) s1
+                Nothing -> soundstageIO alApp Nothing s1
+                Just s0 -> soundstageIO alApp (Just s0) s1
             putMVar ssRef (Just s1)
         pure updated
 
+soundstageIO :: 
+    (MonadIO m) => 
+    ALApp -> 
+    Maybe Soundstage -> 
+    Soundstage -> 
+    m ()
+soundstageIO alApp mss0 ss1 = do
+    ($=?) AL.speedOfSound     True (abs (realToFrac $ soundstageSpeedOfSound ss1))
+    ($=?) AL.distanceModel    True (soundstageDistanceModel ss1)
+    ($=?) AL.dopplerFactor    True (abs (realToFrac $ soundstageDopplerFactor ss1))
+    ($=?) AL.listenerPosition True (_v3ToVertex (listenerPosition $ soundstageListener ss1))
+    ($=?) AL.listenerVelocity True (_v3ToVector (listenerVelocity $ soundstageListener ss1))
+    ($=?) AL.orientation      True (bimap _v3ToVector _v3ToVector (listenerOrientation $ soundstageListener ss1))
+    ($=?) AL.listenerGain     True (abs (realToFrac $ listenerGain (soundstageListener ss1)))
+
+    playingRef <- liftIO (newIORef [])
+    stoppedRef <- liftIO (newIORef [])
+    pausedRef  <- liftIO (newIORef [])
+
+    {-
+    let allSources = fromMaybe [] (sourcesByID <$> mss0) <> sourcesByID (soundstageSources ss1) -- both from the past and from now, by id
+    forM_ allSources \s1 -> do
+        case sourceStatus s1 of 
+            Created  -> createSource >> updateSource
+            Deleted  -> deleteSource
+            Modified -> updateSource
+
+        case sourceState s1 of
+            Just Playing -> liftIO (modifyIORef playingRef (s1 :))
+            Just Stopped -> liftIO (modifyIORef stoppedRef (s1 :))
+            Just Paused  -> liftIO (modifyIORef pausedRef  (s1 :))
+            ____________ -> pure ()
+    -}
+
+    playing <- liftIO (readIORef playingRef)
+    AL.play (undefined <$> playing)
+
+    paused <- liftIO (readIORef pausedRef)
+    AL.pause (undefined <$> paused)
+
+    stopped <- liftIO (readIORef stoppedRef)
+    AL.stop (undefined <$> stopped)
 
 -- | Constructor with default values from a position.
 listener :: V3 Float -> SF a Listener
@@ -162,7 +182,7 @@ soundstage_ ::
 soundstage_ factor model pos vel gain =
     -- initialSources =
     Soundstage
-        <$> undefined -- fmap (Map.fromList . fmap (\x -> (sourceID x, x))) (drpSwitchB [])
+        <$> fmap (Map.fromList . fmap (\x -> (readSourceID x, x))) (drpSwitchB [])
         <*> pure factor
         <*> pure 343.3
         <*> pure model
