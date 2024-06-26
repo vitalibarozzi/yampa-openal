@@ -14,6 +14,7 @@ import Data.IORef
 import FRP.Yampa
 import FRP.Yampa.OpenAL.Types
 import FRP.Yampa.OpenAL.Effects
+import FRP.Yampa.OpenAL.Source
 
 -- TODO add more specific, unit tests, maybe? even though to know its working 
 -- you still gonna need a human there. but still
@@ -24,15 +25,15 @@ main = do
         helloBuffer <- ALUT.createBuffer ALUT.HelloWorld
         whiteBuffer <- ALUT.createBuffer (ALUT.WhiteNoise 1)
         audioBuffer <- ALUT.createBuffer (ALUT.File "./test/audio.wav")
-        let queue1 = [audioBuffer,helloBuffer,whiteBuffer]
-        let queue2 = [whiteBuffer]
+        let queue1 = audioBuffer
+        let queue2 = whiteBuffer
         let tdelay = 16_660
         dtRef <- newIORef 0
         let sources = 
               [ --source "some-source"  queue1
               --, setPitch (constant 1.3) (source "other-source" queue1)
-                setGain (average [tremolo 1.0 3]) (source "other-source" queue1)
-                --setPitch (vibrato 0.3 10) (source "other-source" queue1)
+                --setGain (average [tremolo 1.0 3]) (source "other-source" queue1)
+                withPitch (vibrato 0.3 10) (source "other-source" queue1)
 
               --, setPitch (constant 0.6) (source "idk-source" queue1)
               --, setPitch (constant 0.3) (source "zidk-source" queue1)

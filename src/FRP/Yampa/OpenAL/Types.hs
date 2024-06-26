@@ -4,10 +4,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module FRP.Yampa.OpenAL.Types (
+module FRP.Yampa.OpenAL.Types
+{-
     Soundstage (..),
     Listener (..),
     Source (..),
+    --Status(..),
     SourceSignal,
     DeltaSource,
     Pitch,
@@ -24,7 +26,7 @@ module FRP.Yampa.OpenAL.Types (
     AL.LoopingMode (..),
     AL.SourceState (..),
     AL.Buffer,
-)
+    -}
 where
 
 import Data.Map (Map)
@@ -32,7 +34,9 @@ import FRP.Yampa (SF,Time)
 import Linear as L
 import qualified Sound.ALUT.Loaders as AL
 import qualified Sound.OpenAL as AL
+import qualified Sound.OpenAL.AL.Buffer as AL
 
+{-
 -----------------------------------------------------------
 
 {- | A model of the how the sound elements are defined at
@@ -44,7 +48,7 @@ data Soundstage = Soundstage
     , soundstageSpeedOfSound {---} :: !MetersPerSecond
     , soundstageDistanceModel {--} :: !AL.DistanceModel
     , soundstageListener {-------} :: !Listener
-    , soundstageTime {-----------} :: !Time
+    , soundstageTime {-----------} :: !(Maybe Time)
     }
     deriving
         (Eq, Show)
@@ -59,31 +63,7 @@ data Listener = Listener_
     deriving
         (Eq, Show)
 
------------------------------------------------------------
-
--- | A source of audio in space.
-data Source = Source
-    { sourceID {-----------------} :: !String -- Static.
-    , sourceBufferQueue {--------} :: !AL.Buffer -- Static. TODO not a queue anymore
-    , sourceLoopingMode {--------} :: !AL.LoopingMode -- Static.
-    , sourceRolloffFactor {------} :: !Factor -- Static.
-    , sourceReferenceDistance {--} :: !Meters -- Static.
-    , sourceMaxDistance {--------} :: !Meters -- Static.
-    , sourceRelative {-----------} :: !AL.SourceRelative -- Static.
-    , sourceGainBounds {---------} :: !(Gain, Gain) -- Static.
-    , sourceStartOffset {--------} :: !Time -- Static.
-    , sourcePosition {-----------} :: !(V3 Meters)
-    , sourceVelocity {-----------} :: !(V3 MetersPerSecond)
-    , sourceDirection {----------} :: !(V3 Meters)
-    , sourceGain {---------------} :: !Gain
-    , sourceConeAngles {---------} :: !(Angle, Angle) -- Outer cone, inner cone, in degrees.
-    , sourceConeOuterGain {------} :: !Gain -- Gain outside the cone.
-    , sourceState {--------------} :: !AL.SourceState -- Almost always AL.Playing. Should not be changed directly.
-    , sourcePitch {--------------} :: !Pitch -- Almost always one. Should not be changed directly as it causes time dialation.
-    , sourceOffset {-------------} :: !Time -- Avoid changing it directly.
-    }
-    deriving
-        (Eq, Show)
+-}
 
 -----------------------------------------------------------
 type MetersPerSecond = Float
@@ -110,11 +90,14 @@ type Depth = Double {- 0 to 1 -}
 type Rate = Double
 
 -----------------------------------------------------------
-type SourceSignal a = SF a Source
-
+--data SourceState 
+  --  = Playing Time Time BuffQueue AL.LoopingMode
+ --   | Paused  Time Time BuffQueue AL.LoopingMode
+ --   | Stopped           BuffQueue AL.LoopingMode
+ -- deriving (Eq,Show)
 -----------------------------------------------------------
-type DeltaSource = SF Source Source
-
+--newtype BuffQueue = BuffQueue [(AL.Buffer,AL.BufferData ())] deriving (Eq,Show)
 -----------------------------------------------------------
--- idea
-type SV a b = (SF Source b, SF a b -> SF a Source -> SF a Source)
+--data Status = Created | Deleted | Modified deriving (Eq,Show)
+--, sourceStartOffset {--------} :: !Time -- Static.
+--, sourceStatus {-------------} :: !Status

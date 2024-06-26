@@ -2,7 +2,9 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module FRP.Yampa.OpenAL (
@@ -12,6 +14,7 @@ module FRP.Yampa.OpenAL (
 where
 
 import qualified Data.Map as Map
+import Data.Maybe
 import FRP.Yampa
 import qualified FRP.Yampa as Yampa
 import FRP.Yampa.OpenAL.IO
@@ -20,6 +23,7 @@ import FRP.Yampa.OpenAL.Util
 import Linear.V3
 import qualified Sound.OpenAL as AL
 
+{-
 -------------------------------------------------------------------------------
 -- CONSTRUCTORS ---------------------------------------------------------------
 -------------------------------------------------------------------------------
@@ -29,24 +33,25 @@ import qualified Sound.OpenAL as AL
 -- | Constructor with default values.
 source ::
     String ->
-    [Buffer] ->
+    Buffer ->
     SF a Source
 {-# INLINE source #-}
 source name queue =
     source_
         name
         queue
-        0 -- startAt
-        (0.2, 1.2) -- Gain bounds
-        AL.World -- SourceRelative
-        1 -- RolloffFactor
-        0 -- vel
-        1 -- pitch
-        0 -- pos
-        0 -- ori
-        (360, 360)
-        AL.Playing -- State
-        1 -- Gain
+        Nothing
+        Nothing
+        Nothing
+        Nothing
+        Nothing
+        Nothing
+        Nothing
+        Nothing
+        Nothing
+        Nothing
+        Nothing
+        Nothing
 
 -----------------------------------------------------------
 
@@ -154,7 +159,7 @@ getPitch = arr sourcePitch
 
 -----------------------------------------------------------
 getState :: SF Source AL.SourceState
-getState = arr sourceState
+getState = arr (fromMaybe Stopped . sourceState)
 
 -----------------------------------------------------------
 getPosition :: SF Source (V3 Float)
@@ -174,15 +179,15 @@ getConeAngles = arr sourceConeAngles
 
 -----------------------------------------------------------
 getConeOuterGain :: SF Source AL.Gain
-getConeOuterGain = arr (realToFrac . sourceConeOuterGain)
+getConeOuterGain = arr sourceConeOuterGain
 
 -----------------------------------------------------------
 getStartOffset :: SF Source Double
-getStartOffset = arr (realToFrac . sourceStartOffset)
+getStartOffset = arr sourceStartOffset
 
 -----------------------------------------------------------
 getOffset :: SF Source Double
-getOffset = arr (realToFrac . sourceOffset)
+getOffset = arr sourceOffset
 
 -------------------------------------------------------------------------------
 -- SOURCE SETTERS -----------------------------------------------------------
@@ -197,18 +202,19 @@ setGain gainSF src =
         let newSource =
                 source_
                     (sourceID src0)
-                    (sourceBufferQueue src0)
-                    (realToFrac $ sourceOffset src0)
-                    (sourceGainBounds src0)
-                    (sourceRelative src0)
-                    (realToFrac (sourceRolloffFactor src0))
-                    (sourcePosition src0)
-                    (sourcePitch src0)
-                    (sourceVelocity src0)
-                    (sourceDirection src0)
-                    (sourceConeAngles src0)
+                    (sourceBuffer src0)
+                    (Just $ sourceOffset src0)
+                    (Just (sourceGainBounds src0))
+                    (Just (sourceConeOuterGain src0))
+                    (Just (sourceRelative src0))
+                    (Just $ sourceRolloffFactor src0)
+                    (Just (sourcePitch src0))
+                    (Just $ sourcePosition src0)
+                    (Just $ sourceVelocity src0)
+                    (Just $ sourceDirection src0)
+                    (Just $ sourceConeAngles src0)
                     (sourceState src0)
-                    (realToFrac gain)
+                    (Just $ realToFrac gain)
         rSwitch identity -< (src0, tag (if gainChanged then Event () else NoEvent) newSource)
 
 -----------------------------------------------------------
@@ -224,41 +230,43 @@ setPitch pitchSF src = do
         let newSource =
                 source_
                     (sourceID src0)
-                    (sourceBufferQueue src0)
-                    (realToFrac $ sourceOffset src0)
-                    (sourceGainBounds src0)
-                    (sourceRelative src0)
-                    (realToFrac (sourceRolloffFactor src0))
-                    (sourcePosition src0)
-                    pitch
-                    (sourceVelocity src0)
-                    (sourceDirection src0)
-                    (sourceConeAngles src0)
+                    (sourceBuffer src0)
+                    (Just $ sourceOffset src0)
+                    (Just (sourceGainBounds src0))
+                    (Just (sourceConeOuterGain src0))
+                    (Just (sourceRelative src0))
+                    (Just $ sourceRolloffFactor src0)
+                    (Just pitch)
+                    (Just $ sourcePosition src0)
+                    (Just $ sourceVelocity src0)
+                    (Just $ sourceDirection src0)
+                    (Just $ sourceConeAngles src0)
                     (sourceState src0)
-                    (sourceGain src0)
+                    (Just $ sourceGain src0)
         rSwitch identity -< (src0, tag pitchChanged newSource)
 
 -----------------------------------------------------------
 setState :: SF a AL.SourceState -> SF a Source -> SF a Source
 setState stateSF src =
-    (src &&& stateSF) >>> proc (src1, state1) -> do
-        stateChanged <- edge -< state1 /= sourceState src1
+    (src &&& stateSF) >>> proc (src0, state1) -> do
+        stateChanged <- edge -< Just state1 /= sourceState src0
         let newSource =
                 source_
-                    (sourceID src1)
-                    (sourceBufferQueue src1)
-                    (realToFrac (sourceOffset src1))
-                    (sourceGainBounds src1)
-                    (sourceRelative src1)
-                    (realToFrac (sourceRolloffFactor src1))
-                    (sourcePosition src1)
-                    (sourcePitch src1)
-                    (sourceVelocity src1)
-                    (sourceDirection src1)
-                    (sourceConeAngles src1)
-                    state1
-                    (sourceGain src1)
-        rSwitch identity -< (src1, tag stateChanged newSource)
+                    (sourceID src0)
+                    (sourceBuffer src0)
+                    (Just $ sourceOffset src0)
+                    (Just (sourceGainBounds src0))
+                    (Just (sourceConeOuterGain src0))
+                    (Just (sourceRelative src0))
+                    (Just $ sourceRolloffFactor src0)
+                    (Just $ sourcePitch src0)
+                    (Just $ sourcePosition src0)
+                    (Just $ sourceVelocity src0)
+                    (Just $ sourceDirection src0)
+                    (Just $ sourceConeAngles src0)
+                    (Just state1)
+                    (Just $ sourceGain src0)
+        rSwitch identity -< (src0, tag stateChanged newSource)
 
 -----------------------------------------------------------
 setPosition :: (V3 Double)
@@ -287,41 +295,6 @@ setStartOffset = undefined
 -------------------------------------------------------------------------------
 -- ADVANCED API ---------------------------------------------------------------
 -------------------------------------------------------------------------------
-
------------------------------------------------------------
--- For when you want to change the collection of source
--- signals of the soundstage at some point.
-soundstage_ ::
-    Float ->
-    AL.DistanceModel ->
-    V3 Float ->
-    V3 Float ->
-    Double ->
-    SF (a, Event ([SourceSignal a] -> [SourceSignal a])) Soundstage
-{-# INLINE soundstage_ #-}
-soundstage_ factor model pos vel gain =
-    -- initialSources =
-    Soundstage
-        <$> fmap (Map.fromList . fmap (\x -> (sourceID x, x))) (drpSwitchB [])
-        <*> pure factor
-        <*> pure 343.3
-        <*> pure model
-        <*> listener_ pos vel (V3 0 0 (-1), V3 0 1 0) (realToFrac gain)
-
------------------------------------------------------------
-
--- | Smart constructor for the listener. It handles the movement.
-listener_ ::
-    V3 Float ->
-    V3 Float ->
-    (V3 Float, V3 Float) ->
-    Float ->
-    SF a Listener
-{-# INLINE listener_ #-}
-listener_ x0 v0 ori0 gain0 = proc _ -> do
-    dx <- Yampa.integral -< v0
-    returnA -< Listener_ (x0 + dx) v0 ori0 (realToFrac gain0)
-
 -----------------------------------------------------------
 
 {- | Smart constructor for a sound source. It handles stuff
@@ -330,50 +303,51 @@ down time by changing pitch, for example. Also handles the
 movement of the source based on its velocity.
 -}
 source_ ::
-    -- statics
     String -> -- name
     Buffer -> -- queue
-    DTime -> -- start at
-    (Double, Double) ->
-    AL.SourceRelative ->
-    Double -> -- rolloff
-    V3 Float -> -- position
-    -- dynamics
-    Pitch -> -- pitch
-    V3 Float -> -- velocity -- TODO should be an sf
-    V3 Float -> -- direction -- TODO should be an sf
-    (Double, Double) -> -- cone angles -- TODO sf
-    AL.SourceState -> -- source state -- TODO sf
-    Double -> -- source gain -- TODO sf
+    Maybe DTime -> -- start at
+    Maybe (AL.Gain, AL.Gain) -> -- Gain bounds
+    Maybe AL.Gain -> -- Outer gain.
+    Maybe AL.SourceRelative ->
+    Maybe Float -> -- rolloff
+    Maybe Pitch -> -- pitch
+    Maybe (V3 Float) -> -- position
+    Maybe (V3 Float) -> -- velocity
+    Maybe (V3 Float) -> -- direction
+    Maybe (Double, Double) -> -- cone angles -- TODO sf
+    Maybe AL.SourceState -> -- source state
+    Maybe Double -> -- source gain
     SF a Source
 {-# INLINE source_ #-}
-source_ name queue startAt gainBounds relative rolloff position0 pitch0 velocity0 direction angles state0 gain = proc a -> do
-    t <- Yampa.time -< a
-    -- calculate the change in position
-    dx <- Yampa.integral -< velocity0
-    -- Stop at end of offset.
-    state1 <- Yampa.delay 0 state0 -< state0
-    returnA
-        -<
-            Source
-                { sourceID = name
-                , sourceBufferQueue = queue
-                , sourceLoopingMode = OneShot -- TODO  can this be the cause of not playing all the buffers? (Maybe)
-                , sourceGainBounds = gainBounds -- (0.2, 2)
-                , sourceRelative = relative -- AL.World
-                , sourceReferenceDistance = 1
-                , sourceMaxDistance = 1_000 -- 1KM
-                , sourceRolloffFactor = realToFrac rolloff
-                , sourceConeOuterGain = 0.01
-                , sourceConeAngles = angles -- (360, 360)
-                , sourceState = state1
-                , sourcePitch = pitch0
-                , sourceStartOffset = realToFrac startAt
-                , sourceOffset = realToFrac (startAt + (correction state1 * t * pitch0))
-                , sourcePosition = position0 + dx
-                , sourceVelocity = velocity0
-                , sourceDirection = direction
-                , sourceGain = gain
-                }
-  where
-    correction s = if s == AL.Playing then 1 else 0
+source_
+    sourceID
+    sourceBuffer
+    (fromMaybe 0 -> sourceStartOffset)
+    (fromMaybe (0.2, 2) -> sourceGainBounds)
+    (fromMaybe 0.01 -> sourceConeOuterGain)
+    (fromMaybe AL.World -> sourceRelative)
+    (fromMaybe 1 -> sourceRolloffFactor)
+    (fromMaybe 1 -> sourcePitch)
+    (fromMaybe 0 -> position0)
+    (fromMaybe 0 -> sourceVelocity)
+    (fromMaybe 0 -> sourceDirection)
+    (fromMaybe (360,360) -> sourceConeAngles)
+    (fromMaybe AL.Initial -> state0)
+    (fromMaybe 1 -> sourceGain) =
+        proc a -> do
+            t <- Yampa.time -< a
+            dx <- Yampa.integral -< sourceVelocity
+            state1 <- initially Nothing -< Just state0
+            let correction s = if s == Just AL.Playing then 1 else 0
+            returnA
+                -<
+                    Source
+                        { sourceLoopingMode = OneShot
+                        , sourceReferenceDistance = 1
+                        , sourceMaxDistance = 1_000 -- 1KM
+                        , sourceState = state1
+                        , sourceOffset = sourceStartOffset + (correction state1 * t * sourcePitch)
+                        , sourcePosition = position0 + dx
+                        , ..
+                        }
+                        -}

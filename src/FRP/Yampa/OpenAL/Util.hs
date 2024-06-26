@@ -13,12 +13,21 @@ module FRP.Yampa.OpenAL.Util (
     _vectorToV3,
     smooth,
     appName,
+    ($=?),
 )
 where
 
 import FRP.Yampa
+import Control.Monad.IO.Class
+import Control.Monad
 import Linear as L
 import qualified Sound.OpenAL as AL
+import Data.StateVar
+
+-----------------------------------------------------------
+($=?) :: (MonadIO m) => StateVar x -> Bool -> x -> m ()
+($=?) field cond value = 
+    when cond (field $= value)
 
 ------------------------------------------------------------
 
