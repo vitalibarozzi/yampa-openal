@@ -26,15 +26,20 @@ main = do
         hello <- ALUT.createBuffer ALUT.HelloWorld
         audio <- ALUT.createBuffer (ALUT.File "./test/audio.wav")
         ogsrc <- AL.genObjectName
-        hlsrc <- AL.genObjectName
+        --hlsrc <- AL.genObjectName
         loadSources handle
+              -- TODO missing test for multiple buffers AND buffer streaming api
               [ source ogsrc audio
-               --     & withPitch (vibrato 0.3 10) 
-               --     & withGain  (tremolo 0.5 40)
-              , source hlsrc hello
-              --      & withPitch (vibrato 0.3 10) 
+                    & setOffset 80
+                    -- & withGain (tremolo (-1.1) 10)
+                    -- & setState AL.Paused
+                    -- & withPitch (constant $ -0.2)
+                    -- & withPitch (vibrato 0.1 0.5)
+                    -- & withGain (tremolo 0.2 20)
+                    --, source hlsrc audio
+                    --      & withPitch (vibrato 0.3 10) 
               ]
-        void $ timeout 3_000_000 $ forever do
+        void $ timeout 10_000_000 $ forever do
             dt <- tack dtRef
             _ <- tick dtRef
             _ <- Yampa.react handle (dt / 1_000_000, Nothing)

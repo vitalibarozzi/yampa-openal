@@ -1,11 +1,8 @@
+{-# LANGUAGE Arrows #-}
 {-# LANGUAGE BlockArguments #-}
-
-
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
-
 {-# LANGUAGE RankNTypes #-}
-
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use newtype instead of data" #-}
@@ -14,24 +11,11 @@
 module FRP.Yampa.OpenAL.Listener
 where
 
-import Control.Concurrent
-import Control.Monad
-import Control.Monad.IO.Class
-import Data.Map ( Map, Map )
-import qualified Data.Map as Map
-import Data.Maybe
+import FRP.Yampa (SF, returnA)
 import qualified FRP.Yampa as Yampa
-import FRP.Yampa.OpenAL.Types
-import FRP.Yampa.OpenAL.Util
-import qualified Sound.ALUT.Initialization as AL
-import qualified Sound.OpenAL as AL
-import FRP.Yampa.OpenAL.Source
-import FRP.Yampa
-import Linear as L
-import qualified Sound.ALUT.Loaders as AL
-import qualified Sound.OpenAL.AL.Buffer as AL
-import Data.IORef
-import Data.Bifunctor
+import FRP.Yampa.OpenAL.Source ()
+import FRP.Yampa.OpenAL.Types (Gain)
+import Linear as L (V3 (..))
 
 -----------------------------------------------------------
 data Listener = Listener_
@@ -43,3 +27,27 @@ data Listener = Listener_
     deriving
         (Eq, Show)
 
+-----------------------------------------------------------
+
+-- | Constructor with default values from a position.
+listener :: V3 Float -> SF a Listener
+listener pos =
+    listener_
+        pos
+        0
+        (V3 0 (-1) 0, V3 0 0 1)
+        1
+
+-----------------------------------------------------------
+
+-- | Smart constructor for the listener. It handles the movement.
+listener_ ::
+    V3 Float ->
+    V3 Float ->
+    (V3 Float, V3 Float) ->
+    Float ->
+    SF a Listener
+{-# INLINE listener_ #-}
+listener_ x0 v0 ori0 gain0 = proc _ -> do
+    dx <- Yampa.integral -< v0
+    returnA -< Listener_ (x0 + dx) v0 ori0 (realToFrac gain0)
