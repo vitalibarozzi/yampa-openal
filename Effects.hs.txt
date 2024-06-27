@@ -11,6 +11,7 @@
 {-# HLINT ignore "Use newtype instead of data" #-}
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
+-- TODO temporary modu;e
 module FRP.Yampa.OpenAL.Effects where
 
 import FRP.Yampa (ReactHandle, SF, Time, arr, returnA, (<<<))

@@ -81,14 +81,13 @@ reactInitSoundstage ::
     ALApp ->
     m (ReactHandle a Soundstage)
 {-# INLINE reactInitSoundstage #-}
-reactInitSoundstage a sf alApp = liftIO do
-    ref <- newMVar Nothing
-    Yampa.reactInit (pure a) (actuate ref) sf
+reactInitSoundstage a sf _ = liftIO do
+    soundstageRef <- newMVar Nothing
+    Yampa.reactInit (pure a) (actuate soundstageRef) sf
   where
     actuate ssRef _ updated s1 = do
         when updated do
-            takeMVar ssRef >>= \case
-                Nothing -> updateSoundstage Nothing s1
-                Just s0 -> updateSoundstage (Just s0) s1
-            putMVar ssRef (Just s1)
+            modifyMVar_ ssRef \ms0 -> do
+                updateSoundstage ms0 s1
+                return (Just s1)
         pure updated

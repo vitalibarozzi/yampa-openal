@@ -54,6 +54,21 @@ import Sound.OpenAL (get)
 import qualified Sound.OpenAL as AL
 
 -----------------------------------------------------------
+-- TODO
+streaming ::
+    (a -> Event [AL.Buffer]) ->
+    SF a Source ->
+    SF a Source
+streaming =
+    undefined
+
+-----------------------------------------------------------
+-- TODO
+edgePlay :: SF a Bool -> SF a Source -> SF a Source
+edgePlay cond sf =
+    cond >>> edge >>> switch (undefined $ setState AL.Stopped sf) (setState AL.Playing)
+
+-----------------------------------------------------------
 
 {- | A source of audio in space with multiple buffers in
 queue to be played.
@@ -111,13 +126,13 @@ been heard everywhere in the world.
 -}
 source ::
     AL.Source ->
-    AL.Buffer ->
+    [AL.Buffer] ->
     SF a Source
 {-# INLINE source #-}
 source name queue =
     source_
         name
-        (pure queue)
+        queue
         Nothing
         Nothing
         Nothing
@@ -290,14 +305,23 @@ updateSource s0 s1 = do
     handleFields (_sourceID s1) -- we change the source data (pausing if needed, then resuming)
   where
     handleBuffers sid = do
-        -- TODO for now we assume the buffer queue will not change
         let buffChanged = _sourceBufferQueue s0 /= _sourceBufferQueue s1
         when buffChanged do
             pn <- get (AL.buffersProcessed sid)
             qn <- get (AL.buffersQueued sid)
-            case (pn, qn) of
-                (0, 0) -> AL.queueBuffers sid (_sourceBufferQueue s1)
-                _____ -> pure () -- error . show $ (pn,qn)
+            let sameNumber = fromIntegral (pn + qn) == length (_sourceBufferQueue s1)
+            if sameNumber
+                then -- harder:they changed, but the number of buffers is the same
+                do
+                    case (pn, qn) of
+                        (0, 0) -> undefined
+                        _____ -> undefined
+                else -- easy: they changed and the number of buffers is different
+                do
+                    case (pn, qn) of
+                        -- TODO
+                        (0, 0) -> AL.queueBuffers sid (_sourceBufferQueue s1)
+                        _____ -> pure () -- error . show $ (pn,qn)
     handleFields sid = do
         ($=?) (AL.secOffset sid) (_sourceState s0 == AL.Initial) (realToFrac (_sourceOffset s1)) -- TODO check if we need to pause before changing the offset to avoid pops
         ($=?) (AL.pitch sid) (_sourcePitch s1 /= _sourcePitch s0) (realToFrac (abs (_sourcePitch s1)))

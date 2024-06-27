@@ -11,22 +11,22 @@ module FRP.Yampa.OpenAL.Util (
     _vertexToV3,
     _v3ToVector,
     _vectorToV3,
-    smooth,
     appName,
     ($=?),
 )
 where
 
-import FRP.Yampa
-import Control.Monad.IO.Class
 import Control.Monad
+import Control.Monad.IO.Class
+import Data.StateVar
+import FRP.Yampa
 import Linear as L
 import qualified Sound.OpenAL as AL
-import Data.StateVar
 
 -----------------------------------------------------------
 ($=?) :: (MonadIO m) => StateVar x -> Bool -> x -> m ()
-($=?) field cond value = 
+{-# INLINE ($=?) #-}
+($=?) field cond value =
     when cond (field $= value)
 
 ------------------------------------------------------------
@@ -82,35 +82,33 @@ _v2ToVectorPair (V2 a b) =
     )
 
 -----------------------------------------------------------
-smooth :: (Ord c, Fractional c) => Time -> c -> c -> SF a c
-smooth for max_ value = do
-    let dtb = for / 2
-    let dts = dtb / 3
-    if value > max_
-        then
-            delay dts max_
-                <<< delay dts ((max_ + value) / 2)
-                <<< delay dts (max_ + (value / 2))
-                <<< delay dtb value
-                <<< constant (max_ + (value / 2))
-        else constant value
-
------------------------------------------------------------
 instance (Eq a, Floating a) => VectorSpace (V2 a) a where
+    {-# INLINE zeroVector #-}
     zeroVector = L.zero
+    {-# INLINE (*^) #-}
     (*^) = (L.*^)
+    {-# INLINE negateVector #-}
     negateVector = L.negated
+    {-# INLINE (^+^) #-}
     (^+^) = (L.^+^)
+    {-# INLINE (^-^) #-}
     (^-^) = (L.^-^)
+    {-# INLINE dot #-}
     dot = L.dot
 
 -----------------------------------------------------------
 instance (Eq a, Floating a) => VectorSpace (V3 a) a where
+    {-# INLINE zeroVector #-}
     zeroVector = L.zero
+    {-# INLINE (*^) #-}
     (*^) = (L.*^)
+    {-# INLINE negateVector #-}
     negateVector = L.negated
+    {-# INLINE (^+^) #-}
     (^+^) = (L.^+^)
+    {-# INLINE (^-^) #-}
     (^-^) = (L.^-^)
+    {-# INLINE dot #-}
     dot = L.dot
 
 appName = "[Yampa-OpenAL]"
