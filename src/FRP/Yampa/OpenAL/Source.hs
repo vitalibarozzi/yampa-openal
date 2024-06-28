@@ -50,7 +50,6 @@ import qualified FRP.Yampa as Yampa
 import FRP.Yampa.OpenAL.Types
 import FRP.Yampa.OpenAL.Util
 import Linear.V3
-import Sound.OpenAL (get)
 import qualified Sound.OpenAL as AL
 
 -----------------------------------------------------------
@@ -307,21 +306,30 @@ updateSource s0 s1 = do
     handleBuffers sid = do
         let buffChanged = _sourceBufferQueue s0 /= _sourceBufferQueue s1
         when buffChanged do
-            pn <- get (AL.buffersProcessed sid)
-            qn <- get (AL.buffersQueued sid)
-            let sameNumber = fromIntegral (pn + qn) == length (_sourceBufferQueue s1)
-            if sameNumber
-                then -- harder:they changed, but the number of buffers is the same
-                do
-                    case (pn, qn) of
-                        (0, 0) -> undefined
-                        _____ -> undefined
-                else -- easy: they changed and the number of buffers is different
-                do
-                    case (pn, qn) of
-                        -- TODO
-                        (0, 0) -> AL.queueBuffers sid (_sourceBufferQueue s1)
-                        _____ -> pure () -- error . show $ (pn,qn)
+            let emptyToSomething = length (_sourceBufferQueue s0) <= 0 && length (_sourceBufferQueue s1) > 0
+            let somethingToEmpty = length (_sourceBufferQueue s0) > 0 && length (_sourceBufferQueue s1) <= 0
+            if emptyToSomething
+                then do
+                  -- pn <- get (AL.buffersProcessed sid)
+                  -- qn <- get (AL.buffersQueued sid)
+                  -- in this case, we want to queue all the new buffers, but we
+                  -- want to make sure there is nothing playing at the moment (that we are adding them to a blank source)
+                  -- so we check if there are processedBuffers and queuedBuffers
+                  -- if there are, we stop the source, remove them,
+                  -- then add the new ones
+                  -- if not we just add the noew ones
+                  undefined
+                else 
+                    if somethingToEmpty
+                        then do
+                            -- in this case we wanna check if there is something playing or queued
+                            -- so we stop it and remove all of them if its the case
+                            undefined
+                        else {- something to something -} do
+                            -- this is the most complex case, maybe we can skip it for now
+                            -- this is equivalent to streaming
+                            undefined
+            AL.queueBuffers sid (_sourceBufferQueue s1)
     handleFields sid = do
         ($=?) (AL.secOffset sid) (_sourceState s0 == AL.Initial) (realToFrac (_sourceOffset s1)) -- TODO check if we need to pause before changing the offset to avoid pops
         ($=?) (AL.pitch sid) (_sourcePitch s1 /= _sourcePitch s0) (realToFrac (abs (_sourcePitch s1)))

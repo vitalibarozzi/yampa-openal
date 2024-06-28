@@ -9,6 +9,7 @@
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
 module FRP.Yampa.OpenAL.Soundstage
+-- TODO add export list
 where
 
 import Control.Concurrent ()
@@ -66,11 +67,19 @@ data Soundstage = Soundstage
 soundstage :: [SF a Source] -> SF a Soundstage
 {-# INLINE soundstage #-}
 soundstage sources = proc a -> do
-    soundstage_ (undefined sources) 1 AL.InverseDistance 0 0 1 -< (a, NoEvent)
+    soundstage_ 
+        (undefined sources)  -- TODO
+        1  -- TODO
+        AL.InverseDistance  -- TODO
+        0  -- TODO
+        0  -- TODO
+        1 -- TODO
+          -< (a, NoEvent)
 
 -----------------------------------------------------------
 -- For when you want to change the collection of source
 -- signals of the soundstage at some point. (You probably will.)
+-- TODO add maybes so we can create this using default values if needed
 soundstage_ ::
     Map AL.Source (SF a Source) ->
     Float ->

@@ -31,7 +31,7 @@ main = do
         loadSources
             handle
             -- TODO missing test for multiple buffers AND buffer streaming api
-            [ (ogsrc, (source ogsrc (take 100 $ repeat hello))) -- [hello,hello]))--  & setOffset 80)
+            [ (ogsrc, (source ogsrc (take 2 $ repeat hello))) -- [hello,hello]))--  & setOffset 80)
             -- & withGain (tremolo (-1.1) 10)
             -- & setState AL.Paused
             -- & withPitch (constant $ -0.2)

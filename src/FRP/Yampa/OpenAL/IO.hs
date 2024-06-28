@@ -13,7 +13,9 @@
 {-# HLINT ignore "Use newtype instead of data" #-}
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
-module FRP.Yampa.OpenAL.IO where
+module FRP.Yampa.OpenAL.IO
+-- TODO add export list
+where
 
 import Control.Concurrent
 import Control.Monad

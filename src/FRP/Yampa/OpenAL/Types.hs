@@ -5,6 +5,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module FRP.Yampa.OpenAL.Types
+-- TODO add export list
 where
 
 import Control.Concurrent.MVar

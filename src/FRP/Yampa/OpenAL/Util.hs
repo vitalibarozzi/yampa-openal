@@ -111,4 +111,5 @@ instance (Eq a, Floating a) => VectorSpace (V3 a) a where
     {-# INLINE dot #-}
     dot = L.dot
 
+---
 appName = "[Yampa-OpenAL]"
