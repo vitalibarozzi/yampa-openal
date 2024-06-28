@@ -36,7 +36,7 @@ import FRP.Yampa.OpenAL.Listener
 import FRP.Yampa.OpenAL.Source (
     Source,
     emptySource,
-    readSourceID,
+    sourceID,
     updateSource,
  )
 import FRP.Yampa.OpenAL.Types (Factor, MetersPerSecond)
@@ -113,7 +113,7 @@ updateSoundstage mss0 ss1 = do
             ($=) AL.dopplerFactor (abs (realToFrac $ soundstageDopplerFactor ss1))
             let sources1 = soundstageSources ss1
             updateListener Nothing (soundstageListener ss1)
-            forM_ sources1 \src1 -> updateSource (emptySource (readSourceID src1)) src1
+            forM_ sources1 \src1 -> updateSource (emptySource (sourceID src1)) src1
         Just ss0 -> do
             ($=?) AL.speedOfSound (soundstageSpeedOfSound ss1 /= soundstageSpeedOfSound ss0) (abs (realToFrac $ soundstageSpeedOfSound ss1))
             ($=?) AL.distanceModel (soundstageDistanceModel ss1 /= soundstageDistanceModel ss0) (soundstageDistanceModel ss1)
@@ -121,6 +121,6 @@ updateSoundstage mss0 ss1 = do
             updateListener (Just (soundstageListener ss0)) (soundstageListener ss1)
             forM_ (soundstageSources ss1) \src1 -> do
                 let sources0 = soundstageSources ss0
-                case Map.lookup (readSourceID src1) sources0 of
+                case Map.lookup (sourceID src1) sources0 of
                     Just src0 -> updateSource src0 src1
-                    Nothing -> updateSource (emptySource (readSourceID src1)) src1
+                    Nothing -> updateSource (emptySource (sourceID src1)) src1
