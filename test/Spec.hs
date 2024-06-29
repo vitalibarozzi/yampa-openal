@@ -21,38 +21,48 @@ import Data.Function
 -----------------------------------------------------------
 main :: IO ()
 main = do
-    let tdelay = 16_660 
+    let tdelay = 1
     dtRef <- newIORef 0 
     let mySoundstage = soundstage_ mempty 1 AL.InverseDistance 0 0 1
     withSoundstage (0, Yampa.NoEvent) mySoundstage \handle -> do
-        hello <- ALUT.createBuffer (ALUT.Sine 440 1 4)
-        other <- ALUT.createBuffer (ALUT.Sine 340 1 4)
-        fulll <- ALUT.createBuffer (ALUT.Sine 240 1 4)
-        sm <- ALUT.createBuffer (ALUT.Sine 240 1 0.5)
-        silence <- ALUT.createBuffer (ALUT.Sine 10 1 0.25)
+        hello <- ALUT.createBuffer (ALUT.Sine 440 1 2.2)
+        other <- ALUT.createBuffer (ALUT.Sine 340 1 2.3)
+        fulll <- ALUT.createBuffer (ALUT.Sine 240 1 2.4)
+        sm <- ALUT.createBuffer (ALUT.Sine 240 1 0.3)
+        sm1 <- ALUT.createBuffer (ALUT.Sine 340 1 0.3)
+        sm2 <- ALUT.createBuffer (ALUT.Sine 440 1 0.3)
+        sm3 <- ALUT.createBuffer (ALUT.Sine 540 1 0.3)
+        sm4 <- ALUT.createBuffer (ALUT.Sine 640 1 0.3)
+        silence <- ALUT.createBuffer (ALUT.Sine 10 1 0.15)
         audio <- ALUT.createBuffer (ALUT.File "./test/audio.wav")
         ogsrc <- AL.genObjectName
-        --hlsrc <- AL.genObjectName
-        let getBuffs = \case 0 -> [sm,silence,sm,silence]
-                             1 -> [other]
+        let getBuffs = \case 0 -> []
+                             1 -> [sm,silence,sm1,silence,sm2,silence]
+                             _ -> [sm,sm1,sm2,sm3,sm4]
         loadSources
             handle
-            -- TODO missing test for buffers streaming api
-            [ mkSrc ogsrc [hello] \s -> s 
-                  -- & streaming getBuffs
+            [ mkSrc ogsrc [audio] 
+                \s ->
+            --[ mkSrc ogsrc [sm,sm1,sm2,sm3,sm4] \s -> 
+                --s --  \s -> s 
+                -- & setOffset 0.8
+                  s & streaming getBuffs
                   -- & setQueue [hello,fulll]
-                  -- & withPitch (constant 1.45)
-                  -- & foo (setQueue [other])
-            -- , mkSrc hlsrc [audio] id
+                  -- & withPitch (constant (-0.15))
             ] 
         t0 <- getCPUTime
-        void $ timeout 10_000_000 $ forever do 
+        void $ timeout 3_000_000 $ forever do 
             dt <- tack dtRef
             t1 <- getCPUTime
-            let n = if abs (t1 - t0) >= 40_000_000_000 then 1 else 0
+            let n = if abs (t1 - t0) <= 30_000_000_000 
+                        then 0
+                        else if abs (t1 - t0) >= 41_000_100_000 && abs (t1 - t0) <= 80_000_000_000 then 1 else 2
+            let neg = if abs (t1 - t0) >= 45_020_000_000  
+                         then 1 -- (-1)
+                         else 1
             _ <- tick dtRef
-            _ <- Yampa.react handle (dt / 1_000_000, Just (n, NoEvent))
-            when (dt < tdelay) (threadDelay $ round (tdelay / 1.5))
+            _ <- Yampa.react handle (neg * (dt / 89_480_000), Just (n, NoEvent))
+            pure () -- when (dt < tdelay) (threadDelay $ round (tdelay / 1.5))
   where
     loadSources :: ReactHandle (Int, Event (Map AL.Source (SF a Source) -> Map AL.Source (SF a Source))) b -> [(AL.Source, SF a Source)] -> IO ()
     loadSources handle sources =
@@ -62,16 +72,6 @@ main = do
 
 mkSrc src queue k = 
     (src, source src queue & k)
-
-    --returnA -< s1 { 
---afterSec x sfk sf1 = proc foo -> do
---    x <- Yampa.switch (identity &&& (Yampa.delayEvent 3 <<< now ())) (\c -> sf1) -< (foo, NoEvent)
---    returnA -< undefined x
-    -- TODO this is not working because we need a switch?
-    --t <- Yampa.time -< foo
-    --if t >= x
-    --    then sfk sf1 -< foo
-    --    else sf1 -< foo
 
 -----------------------------------------------------------
 tick :: IORef Integer -> IO ()
@@ -84,11 +84,3 @@ tack ref = do
     t1 <- getCPUTime
     t0 <- readIORef ref
     return (realToFrac (t1 - t0) / 10_000)
-
-            -- & withGain (tremolo (-1.1) 10)
-            -- & setState AL.Paused
-            -- & withPitch (constant $ -0.2)
-            -- & withPitch (vibrato 0.1 0.5)
-            -- & withGain (tremolo 0.2 20)
-            -- , source hlsrc audio
-            --      & withPitch (vibrato 0.3 10)

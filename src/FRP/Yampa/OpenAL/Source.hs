@@ -13,38 +13,52 @@
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
 module FRP.Yampa.OpenAL.Source (
-    Source (
-        sourceRolloffFactor,
-        sourceReferenceDistance,
-        sourceMaxDistance,
-        sourceRelative,
-        sourceGainBounds,
-        sourceLoopingMode,
-        sourceGain,
-        sourcePosition,
-        sourceVelocity,
-        sourceDirection,
-        sourceConeAngles,
-        sourceConeOuterGain
-    ),
-    emptySource,
-    sourceOffset,
-    sourceID,
-    source,
-    source_,
-    setOffset,
-    setState,
-    setQueue,
-    -- setPosition
-    -- withVelocity
-    -- withState,
-    withPitch,
-    withGain,
-    updateSource,
-    ----
-    whenOffset,
-    streaming,
-
+        Source (
+            sourceRolloffFactor,
+            sourceReferenceDistance,
+            sourceMaxDistance,
+            sourceRelative,
+            sourceGainBounds,
+            sourceLoopingMode,
+            sourceGain,
+            sourcePosition,
+            sourceVelocity,
+            sourceDirection,
+            sourceConeAngles,
+            sourceConeOuterGain
+            ),
+        --
+        --
+        sourceID,
+        sourceOffset,
+        sourceState,
+        sourcePitch,
+        sourceBufferQueue,
+        --
+        emptySource,
+        source,
+        streaming,
+        source_,
+        --
+        setRelative,
+        setPosition,
+        --setLoopingMode,
+        --setMaxDistance,
+        --setReferenceDistance,
+        --setRolloffFactor,
+        setOffset,
+        setState,
+        setQueue,
+        --
+        -- withState,
+        -- withDirection
+        -- withVelocity
+        -- withConeAngles,
+        -- withConeOuterGain,
+        withPitch,
+        withGain,
+        -- 
+        updateSource,
 )
 where
 
@@ -58,64 +72,6 @@ import FRP.Yampa.OpenAL.Util
 import Linear.V3
 import Sound.OpenAL (get, ($=))
 import qualified Sound.OpenAL as AL
-
------------------------------------------------------------
--- TODO
-streaming ::
-    (a -> [AL.Buffer]) ->
-    SF a Source ->
-    SF a Source
-streaming stream src = -- proc a -> do
-    (src &&& arr stream) >>> proc (src0, bs) -> do
-        let newSource =
-                source_
-                    (_sourceID src0)
-                    bs
-                    Nothing
-                    (Just (sourceGainBounds src0))
-                    (Just (sourceConeOuterGain src0))
-                    (Just (sourceRelative src0))
-                    (Just $ sourceRolloffFactor src0)
-                    (Just $ _sourcePitch src0)
-                    (Just $ sourcePosition src0)
-                    (Just $ sourceVelocity src0)
-                    (Just $ sourceDirection src0)
-                    (Just $ sourceConeAngles src0)
-                    (Just $ _sourceState src0)
-                    (Just $ sourceGain src0)
-                    (Just $ sourceLoopingMode src0)
-        let ev = if bs /= [] then Event () else NoEvent
-        rSwitch identity -< (src0, tag ev newSource)
-
------------------------------------------------------------
--- TODO
-edgePlay :: SF a Bool -> SF a Source -> SF a Source
-edgePlay cond sf =
-    cond >>> edge >>> switch (undefined $ setState AL.Stopped sf) (setState AL.Playing)
-
------------------------------------------------------------
-nowEvent :: SF a b -> SF a (b, Event b)
-nowEvent src =
-    let tagEv (src0,ev) = (src0, tag ev src0)
-    in src >>> (identity &&& now ()) >>> arr tagEv
-
-
-
------------------------------------------------------------
-delayByOffset :: Time -> b -> SF Source b
-delayByOffset = undefined
-
------------------------------------------------------------
-delayAppByOffset :: Time -> b -> (SF a Source -> SF a Source) -> SF a Source
-delayAppByOffset = undefined
-
------------------------------------------------------------
-whenOffset :: Time -> b -> SF Source (Event b)
-{-# INLINE whenOffset #-}
-whenOffset t b = proc src -> do
-    offset <- arr sourceOffset -< src
-    ev <- edge -< offset >= t
-    returnA -< tag ev b
 
 -----------------------------------------------------------
 
@@ -176,6 +132,21 @@ sourceID = _sourceID
 sourceOffset :: Source -> Time
 {-# INLINE sourceOffset #-}
 sourceOffset = _sourceOffset
+
+-----------------------------------------------------------
+sourceState :: Source -> AL.SourceState
+{-# INLINE sourceState #-}
+sourceState = _sourceState
+
+-----------------------------------------------------------
+sourcePitch :: Source -> Pitch
+{-# INLINE sourcePitch #-}
+sourcePitch = _sourcePitch
+
+-----------------------------------------------------------
+sourceBufferQueue :: Source -> [AL.Buffer]
+{-# INLINE sourceBufferQueue #-}
+sourceBufferQueue = _sourceBufferQueue
 
 -----------------------------------------------------------
 
@@ -260,7 +231,7 @@ setQueue queue src =
         source_
             (_sourceID src0)
             queue
-            (Just (_sourceOffset src0)) -- TODO
+            (Just (_sourceOffset src0))
             (Just (sourceGainBounds src0))
             (Just (sourceConeOuterGain src0))
             (Just (sourceRelative src0))
@@ -275,6 +246,51 @@ setQueue queue src =
             (Just $ sourceLoopingMode src0)
 
 -----------------------------------------------------------
+setRelative :: AL.SourceRelative -> SF a Source -> SF a Source
+{-# INLINE setRelative #-}
+setRelative relative src =
+    switch (nowEvent src) \src0 ->
+        source_
+            (_sourceID src0)
+            (sourceBufferQueue src0)
+            (Just (_sourceOffset src0))
+            (Just (sourceGainBounds src0))
+            (Just (sourceConeOuterGain src0))
+            (Just relative)
+            (Just $ sourceRolloffFactor src0)
+            (Just $ _sourcePitch src0)
+            (Just $ sourcePosition src0)
+            (Just $ sourceVelocity src0)
+            (Just $ sourceDirection src0)
+            (Just $ sourceConeAngles src0)
+            (Just $ _sourceState src0)
+            (Just $ sourceGain src0)
+            (Just $ sourceLoopingMode src0)
+
+-----------------------------------------------------------
+setPosition :: V3 Float -> SF a Source -> SF a Source
+{-# INLINE setPosition #-}
+setPosition pos src =
+    switch (nowEvent src) \src0 ->
+        source_
+            (sourceID src0)
+            (sourceBufferQueue src0)
+            (Just (_sourceOffset src0))
+            (Just (sourceGainBounds src0))
+            (Just (sourceConeOuterGain src0))
+            (Just (sourceRelative src0))
+            (Just $ sourceRolloffFactor src0)
+            (Just $ _sourcePitch src0)
+            (Just pos)
+            (Just $ sourceVelocity src0)
+            (Just $ sourceDirection src0)
+            (Just $ sourceConeAngles src0)
+            (Just $ _sourceState src0)
+            (Just $ sourceGain src0)
+            (Just $ sourceLoopingMode src0)
+
+-----------------------------------------------------------
+
 -- | Variable gain.
 withGain :: SF a AL.Gain -> SF a Source -> SF a Source
 {-# INLINE withGain #-}
@@ -310,6 +326,35 @@ withPitch pitchSF src = do
                     (Just $ sourceGain src0)
                     (Just $ sourceLoopingMode src0)
         let ev = if pitch /= _sourcePitch src0 then Event () else NoEvent
+        rSwitch identity -< (src0, tag ev newSource)
+
+-----------------------------------------------------------
+-- | Extracts the buffer stream from the `a` value.
+streaming ::
+    (a -> [AL.Buffer]) ->
+    SF a Source ->
+    SF a Source
+{-# INLINE streaming #-}
+streaming stream src =
+    (src &&& arr stream) >>> proc (src0, bs) -> do
+        let newSource =
+                source_
+                    (_sourceID src0)
+                    bs
+                    (Just (_sourceOffset src0))
+                    (Just (sourceGainBounds src0))
+                    (Just (sourceConeOuterGain src0))
+                    (Just (sourceRelative src0))
+                    (Just $ sourceRolloffFactor src0)
+                    (Just $ _sourcePitch src0)
+                    (Just $ sourcePosition src0)
+                    (Just $ sourceVelocity src0)
+                    (Just $ sourceDirection src0)
+                    (Just $ sourceConeAngles src0)
+                    (Just $ _sourceState src0)
+                    (Just $ sourceGain src0)
+                    (Just $ sourceLoopingMode src0)
+        let ev = if bs /= [] then Event () else NoEvent
         rSwitch identity -< (src0, tag ev newSource)
 
 {- | Smart constructor for a sound source. It handles stuff
@@ -348,13 +393,13 @@ source_
     (fromMaybe {------------} 0 -> sourceVelocity)
     (fromMaybe {------------} 0 -> sourceDirection)
     (fromMaybe {---} (360, 360) -> sourceConeAngles)
-    (fromMaybe {----} AL.Paused -> state0)
+    (fromMaybe {---} AL.Initial -> state0)
     (fromMaybe {------------} 1 -> sourceGain)
     (fromMaybe {---} AL.OneShot -> sourceLoopingMode) =
         proc a -> do
             t <- Yampa.time -< a
             sourcePosition <- arr (+ position0) <<< Yampa.integral -< sourceVelocity
-            let correction s = if s == AL.Playing then 1 else 0
+            let correction s = if s == AL.Playing {-|| s == AL.Initial-} then 1 else 0
             returnA
                 -<
                     Source
@@ -378,46 +423,41 @@ updateSource s0 s1 = do
     handleBuffers (_sourceID s1) -- we make changes to the buffers
     handleState (_sourceID s1) -- we decide if the source should keep playing or stop or pause
     handleFields (_sourceID s1) -- we change the source data (pausing if needed, then resuming)
-    liftIO $ internalErrorHandler =<< AL.alErrors
   where
-    internalErrorHandler errors = do
-        unless (null errors) (error . show $ (appName <> show errors))
     handleBuffers sid = do
         let buffChanged = _sourceBufferQueue s0 /= _sourceBufferQueue s1
         when buffChanged do
-            get (AL.sourceState sid) >>= \case
-                AL.Playing -> do
-                    AL.stop [sid]
-                    pn <- get (AL.buffersProcessed sid)
-                    when (pn > 0) (void (AL.unqueueBuffers sid pn))
-                    unless (null (_sourceBufferQueue s1)) (AL.queueBuffers sid (_sourceBufferQueue s1))
-                    AL.play [sid]
-                AL.Initial -> do
-                    unless (null (_sourceBufferQueue s1)) do
+            unless (null (_sourceBufferQueue s1)) do
+                get (AL.sourceState sid) >>= \case
+                    AL.Playing -> do
+                        AL.stop [sid]
+                        pn <- get (AL.buffersProcessed sid)
+                        when (pn > 0) (void (AL.unqueueBuffers sid pn))
+                        AL.queueBuffers sid (_sourceBufferQueue s1)
+                        AL.play [sid]
+                    AL.Initial -> do
                         pn <- get (AL.buffersProcessed sid)
                         when (pn > 0) (void (AL.unqueueBuffers sid pn))
                         qn <- get (AL.buffersQueued sid)
                         when (qn > 0) (AL.buffer sid $= Nothing)
-                        unless (null (_sourceBufferQueue s1)) (AL.queueBuffers sid (_sourceBufferQueue s1))
-                AL.Paused -> do -- pure ()
-                    AL.stop [sid]
-                    pn <- get (AL.buffersProcessed sid)
-                    when (pn > 0) (void (AL.unqueueBuffers sid pn))
-                    qn <- get (AL.buffersQueued sid)
-                    when (qn > 0) (AL.buffer sid $= Nothing)
-                    unless (null (_sourceBufferQueue s1)) (AL.queueBuffers sid (_sourceBufferQueue s1))
-                    AL.play [sid]
-                AL.Stopped -> do
-                    pn <- get (AL.buffersProcessed sid)
-                    when (pn > 0) (void (AL.unqueueBuffers sid pn))
-                    qn <- get (AL.buffersQueued sid)
-                    when (qn > 0) (AL.buffer sid $= Nothing)
-                    unless (null (_sourceBufferQueue s1)) (AL.queueBuffers sid (_sourceBufferQueue s1))
-                    when (_sourceState s0 == AL.Playing) (AL.play [sid])
+                        AL.queueBuffers sid (_sourceBufferQueue s1)
+                    AL.Paused -> do
+                        AL.stop [sid]
+                        pn <- get (AL.buffersProcessed sid)
+                        when (pn > 0) (void (AL.unqueueBuffers sid pn))
+                        qn <- get (AL.buffersQueued sid)
+                        when (qn > 0) (AL.buffer sid $= Nothing)
+                        AL.queueBuffers sid (_sourceBufferQueue s1)
+                        AL.pause [sid]
+                    AL.Stopped -> do
+                        pn <- get (AL.buffersProcessed sid)
+                        when (pn > 0) (void (AL.unqueueBuffers sid pn))
+                        qn <- get (AL.buffersQueued sid)
+                        when (qn > 0) (AL.buffer sid $= Nothing)
+                        AL.queueBuffers sid (_sourceBufferQueue s1)
+                        when (_sourceState s0 == AL.Playing) (AL.play [sid])
     handleFields sid = do
-        -- TODO
-        liftIO $ print (realToFrac (_sourceOffset s1))
-        ($=?) (AL.secOffset sid) (_sourceState s0 == AL.Initial && _sourceState s1 /= AL.Initial) (realToFrac (_sourceOffset s1)) -- TODO check if we need to pause before changing the offset to avoid pops
+        ($=?) (AL.secOffset sid) (_sourceState s1 == AL.Initial) (realToFrac (_sourceOffset s1))
         ($=?) (AL.pitch sid) (_sourcePitch s1 /= _sourcePitch s0) (realToFrac (abs (_sourcePitch s1)))
         ($=?) (AL.coneAngles sid) (sourceConeAngles s1 /= sourceConeAngles s0) (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
         ($=?) (AL.coneOuterGain sid) (sourceConeOuterGain s1 /= sourceConeOuterGain s0) (sourceConeOuterGain s1)
@@ -442,61 +482,10 @@ updateSource s0 s1 = do
         notStopped = _sourceState s0 == AL.Initial || _sourceState s0 == AL.Paused
 
 
--- let emptyToSomething = length (_sourceBufferQueue s0) <= 0 && length (_sourceBufferQueue s1) > 0
--- let somethingToEmpty = length (_sourceBufferQueue s0) > 0 && length (_sourceBufferQueue s1) <= 0
--- if emptyToSomething
---   then do
---    AL.queueBuffers sid (_sourceBufferQueue s1)
--- s <- get (AL.sourceState sid)
--- case s of
--- AL.Playing -> undefined -- AL.stop [sid]
--- AL.Paused  -> pure ()
--- AL.Initial -> AL.queueBuffers sid (_sourceBufferQueue s1)
--- AL.Stopped -> pure ()
--- AL.stop [sid]
--- pn <- get (AL.buffersProcessed sid)
--- when (pn > 0) (void (AL.unqueueBuffers sid pn))
--- qn <- get (AL.buffersQueued sid)
--- when (qn > 0) (AL.buffer sid $= Nothing)
--- case s of
---    AL.Playing -> AL.play [sid]
---    AL.Paused  -> pure ()
---    AL.Initial -> pure ()
---    AL.Stopped -> pure ()
--- else
---    if somethingToEmpty
---       then do
--- in this case we wanna check if there is something playing or queued
--- so we stop it and remove all of them if its the case
---          undefined
---     else {- something to something -} do
--- this is the most complex case, maybe we can skip it for now
--- this is equivalent to streaming
--- s <- get (AL.sourceState sid)
--- case s of
---    AL.Playing -> AL.stop [sid]
---    AL.Paused  -> pure ()
---    AL.Initial -> pure ()
---    AL.Stopped -> pure ()
--- AL.stop [sid]
---          AL.stop [sid] -- pure ()
---         pn <- get (AL.buffersProcessed sid)
---        when (pn > 0) (void (AL.unqueueBuffers sid pn))
--- qn <- get (AL.buffersQueued sid)
--- error . show $ (pn,qn)
--- AL.buffer sid $= Nothing
---       AL.play [sid]
--- pn <- get (AL.buffersProcessed sid)
--- qn <- get (AL.buffersQueued sid)
--- when (qn > 0) (void (AL.unqueueBuffers sid qn))
--- AL.play [sid]
--- AL.queueBuffers sid (_sourceBufferQueue s1)
--- pn <- get (AL.buffersProcessed sid)
--- qn <- get (AL.buffersQueued sid)
--- s <- get (AL.sourceState sid)
--- error . show $ (s,pn,qn)
--- case s of
---    AL.Playing -> AL.play [sid]
---    AL.Paused  -> pure ()
---    AL.Initial -> pure ()
---    AL.Stopped -> pure ()
+-----------------------------------------------------------
+-- | Look for equivalent in yampa api.
+nowEvent :: SF a b -> SF a (b, Event b)
+{-# INLINE nowEvent #-}
+nowEvent src =
+    let tagEv (src0, ev) = (src0, tag ev src0)
+     in src >>> (identity &&& now ()) >>> arr tagEv

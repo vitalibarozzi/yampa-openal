@@ -9,12 +9,12 @@
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
 module FRP.Yampa.OpenAL.Soundstage
--- TODO add export list
+
 where
 
 import Control.Concurrent ()
-import Control.Monad (forM_)
-import Control.Monad.IO.Class (MonadIO)
+import Control.Monad (forM_,unless)
+import Control.Monad.IO.Class (MonadIO,liftIO)
 import Data.Bifunctor (Bifunctor (bimap))
 import Data.IORef ()
 import Data.Map (Map)
@@ -40,7 +40,7 @@ import FRP.Yampa.OpenAL.Source (
     updateSource,
  )
 import FRP.Yampa.OpenAL.Types (Factor, MetersPerSecond)
-import FRP.Yampa.OpenAL.Util (($=?), _v3ToVector, _v3ToVertex)
+import FRP.Yampa.OpenAL.Util (appName,($=?), _v3ToVector, _v3ToVertex)
 import Linear as L (V3 (..))
 import qualified Sound.OpenAL as AL
 
@@ -124,3 +124,7 @@ updateSoundstage mss0 ss1 = do
                 case Map.lookup (sourceID src1) sources0 of
                     Just src0 -> updateSource src0 src1
                     Nothing -> updateSource (emptySource (sourceID src1)) src1
+    liftIO $ internalErrorHandler =<< AL.alErrors
+  where
+    internalErrorHandler errors = do
+        unless (null errors) (error . show $ (appName <> show errors))
