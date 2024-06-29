@@ -1,4 +1,3 @@
-{-# LANGUAGE Arrows #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
@@ -7,14 +6,14 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use newtype instead of data" #-}
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module FRP.Yampa.OpenAL.Soundstage
-
 where
 
 import Control.Concurrent ()
-import Control.Monad (forM_,unless)
-import Control.Monad.IO.Class (MonadIO,liftIO)
+import Control.Monad (forM_, unless, when)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bifunctor (Bifunctor (bimap))
 import Data.IORef ()
 import Data.Map (Map)
@@ -27,8 +26,10 @@ import FRP.Yampa (
     SF,
     Time,
     drpSwitchB,
+    identity,
     initially,
     now,
+    (&&&),
     (<<<),
  )
 import qualified FRP.Yampa as Yampa
@@ -40,7 +41,7 @@ import FRP.Yampa.OpenAL.Source (
     updateSource,
  )
 import FRP.Yampa.OpenAL.Types (Factor, MetersPerSecond)
-import FRP.Yampa.OpenAL.Util (appName,($=?), _v3ToVector, _v3ToVertex)
+import FRP.Yampa.OpenAL.Util (appName, ($=?), _v3ToVector, _v3ToVertex)
 import Linear as L (V3 (..))
 import qualified Sound.OpenAL as AL
 
@@ -55,7 +56,7 @@ data Soundstage = Soundstage
     , soundstageSpeedOfSound {---} :: !MetersPerSecond
     , soundstageDistanceModel {--} :: !AL.DistanceModel
     , soundstageListener {-------} :: !Listener
-    , soundstageTime {-----------} :: !(Maybe Time)
+    , soundstageTime {-----------} :: !Time
     }
 
 -----------------------------------------------------------
@@ -64,17 +65,19 @@ data Soundstage = Soundstage
  - don't need to change the sources signals of the soundstage
  - during its execution.
 -}
-soundstage :: [SF a Source] -> SF a Soundstage
+soundstage ::
+    Map AL.Source (SF a Source) ->
+    SF a Soundstage
 {-# INLINE soundstage #-}
-soundstage sources = proc a -> do
-    soundstage_ 
-        (undefined sources)  -- TODO
-        1  -- TODO
-        AL.InverseDistance  -- TODO
-        0  -- TODO
-        0  -- TODO
-        1 -- TODO
-          -< (a, NoEvent)
+soundstage sources =
+    soundstage_
+        sources
+        1
+        AL.InverseDistance
+        0
+        0
+        1
+        (const NoEvent)
 
 -----------------------------------------------------------
 -- For when you want to change the collection of source
@@ -87,16 +90,17 @@ soundstage_ ::
     V3 Float ->
     V3 Float ->
     Double ->
-    SF (a, Event (Map AL.Source (SF a Source) -> Map AL.Source (SF a Source))) Soundstage
+    (a -> Event (Map AL.Source (SF a Source) -> Map AL.Source (SF a Source))) ->
+    SF a Soundstage
 {-# INLINE soundstage_ #-}
-soundstage_ initialSources factor model pos vel gain =
+soundstage_ initialSources factor model pos vel gain k =
     Soundstage
-        <$> drpSwitchB initialSources
+        <$> (drpSwitchB initialSources <<< (identity &&& arr k))
         <*> pure factor
         <*> pure 343.3
         <*> pure model
-        <*> listener_ pos vel (V3 0 0 (-1), V3 0 1 0) (realToFrac gain)
-        <*> (initially Nothing <<< arr Just <<< Yampa.time) -- wtf?
+        <*> listener_ (Just pos) (Just vel) (Just (V3 0 0 (-1), V3 0 1 0)) (Just (realToFrac gain))
+        <*> (initially 0 <<< Yampa.time) -- wtf?
 
 -----------------------------------------------------------
 updateSoundstage ::

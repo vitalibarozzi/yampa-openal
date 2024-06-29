@@ -42,6 +42,7 @@ module FRP.Yampa.OpenAL.Source (
         --
         setRelative,
         setPosition,
+        -- TODO
         --setLoopingMode,
         --setMaxDistance,
         --setReferenceDistance,
@@ -49,7 +50,7 @@ module FRP.Yampa.OpenAL.Source (
         setOffset,
         setState,
         setQueue,
-        --
+        ---- TODO
         -- withState,
         -- withDirection
         -- withVelocity
@@ -219,7 +220,7 @@ setOffset offset src = do
             (Just $ sourceVelocity src0)
             (Just $ sourceDirection src0)
             (Just $ sourceConeAngles src0)
-            (Just $ _sourceState src0)
+            (Just $ AL.Playing)
             (Just $ sourceGain src0)
             (Just $ sourceLoopingMode src0)
 
@@ -425,7 +426,11 @@ updateSource s0 s1 = do
     handleFields (_sourceID s1) -- we change the source data (pausing if needed, then resuming)
   where
     handleBuffers sid = do
+
+        -- TODO we need a whole set of functionality here to support playing buffers when time is passing backwards
+
         let buffChanged = _sourceBufferQueue s0 /= _sourceBufferQueue s1
+
         when buffChanged do
             unless (null (_sourceBufferQueue s1)) do
                 get (AL.sourceState sid) >>= \case
@@ -456,8 +461,12 @@ updateSource s0 s1 = do
                         when (qn > 0) (AL.buffer sid $= Nothing)
                         AL.queueBuffers sid (_sourceBufferQueue s1)
                         when (_sourceState s0 == AL.Playing) (AL.play [sid])
+    
+    -- TODO we need a general function that uppon receiving a buffer ,returns its inverse (in a new buffer) copyReversed :: ...etc
     handleFields sid = do
-        ($=?) (AL.secOffset sid) (_sourceState s1 == AL.Initial) (realToFrac (_sourceOffset s1))
+        offset <- get (AL.secOffset sid)
+        let diff = realToFrac (_sourceOffset s1) - offset
+        ($=?) (AL.secOffset sid) (_sourceState s1 == AL.Initial || diff > 0.01) (abs (realToFrac (_sourceOffset s1))) -- TODO when playing in reverse we need to adjust the offset so we play in the right place of the reversed buffer
         ($=?) (AL.pitch sid) (_sourcePitch s1 /= _sourcePitch s0) (realToFrac (abs (_sourcePitch s1)))
         ($=?) (AL.coneAngles sid) (sourceConeAngles s1 /= sourceConeAngles s0) (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
         ($=?) (AL.coneOuterGain sid) (sourceConeOuterGain s1 /= sourceConeOuterGain s0) (sourceConeOuterGain s1)

@@ -1,20 +1,14 @@
-{-# LANGUAGE Arrows #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use newtype instead of data" #-}
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
-module FRP.Yampa.OpenAL.IO
--- TODO add export list
+module FRP.Yampa.OpenAL.IO (withSoundstage, withAL, reactInitSoundstage)
 where
 
 import Control.Concurrent
@@ -59,18 +53,17 @@ withAL ::
     (ALApp -> m a) ->
     m a
 {-# INLINE withAL #-}
-withAL clientErrorHandler k = do
-    AL.runALUT appName [] \_ _ -> do
-        ___ <- liftIO (forkIO (forever handleError))
-        ref <- liftIO (newMVar mempty)
-        ioref <- liftIO (newIORef mempty)
-        k (ALApp ref ioref)
+withAL clientErrorHandler k = AL.runALUT appName [] \_ _ -> do
+    ___ <- liftIO (forkIO (forever handleError))
+    ref <- liftIO (newMVar mempty)
+    ioref <- liftIO (newIORef mempty)
+    k (ALApp ref ioref)
   where
     handleError = do
         threadDelay 1
         errors <- AL.alErrors
         fromMaybe internalErrorHandler clientErrorHandler errors
-    internalErrorHandler errors = do
+    internalErrorHandler errors =
         if not (null errors)
             then putStrLn (appName <> show errors)
             else threadDelay 5_000_000

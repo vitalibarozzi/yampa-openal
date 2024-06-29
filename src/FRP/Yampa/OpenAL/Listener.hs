@@ -8,12 +8,19 @@
 {-# HLINT ignore "Use newtype instead of data" #-}
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
-module FRP.Yampa.OpenAL.Listener
--- TODO add export listt
+module FRP.Yampa.OpenAL.Listener (
+    Listener (..),
+    listener,
+    listener_,
+    setListenerPosition,
+    withListenerVelocity,
+    updateListener,
+)
 where
 
 import Control.Monad.IO.Class
 import Data.Bifunctor
+import Data.Maybe
 import Data.StateVar (($=))
 import FRP.Yampa (SF, returnA)
 import qualified FRP.Yampa as Yampa
@@ -34,28 +41,32 @@ data Listener = Listener
 
 -----------------------------------------------------------
 
--- | Constructor with default values from a position.
-listener :: V3 Float -> SF a Listener
+-- | Constructor with default values.
+listener :: SF a Listener
 {-# INLINE listener #-}
-listener pos =
+listener =
     listener_
-        pos
-        0 -- TODO
-        (V3 0 (-1) 0, V3 0 0 1) -- TODO
-        1 -- TODO
+        Nothing
+        Nothing
+        Nothing
+        Nothing
 
 -----------------------------------------------------------
 
--- | Smart constructor for the listener. It handles the movement.
--- TODO add maybes and default values
+{- | Smart constructor for the listener. It handles the movement.
+-}
 listener_ ::
-    V3 Float ->
-    V3 Float ->
-    (V3 Float, V3 Float) ->
-    Float ->
+    Maybe (V3 Float) ->
+    Maybe (V3 Float) ->
+    Maybe (V3 Float, V3 Float) ->
+    Maybe Float ->
     SF a Listener
 {-# INLINE listener_ #-}
-listener_ x0 v0 ori0 gain0 = proc _ -> do
+listener_ mx0 mv0 mori0 mgain0 = proc _ -> do
+    let x0 = fromMaybe 0 mx0
+    let v0 = fromMaybe 0 mv0
+    let ori0 = fromMaybe (V3 0 (-1) 0, V3 0 0 1) mori0
+    let gain0 = fromMaybe 1 mgain0
     dx <- Yampa.integral -< v0
     returnA -< Listener (x0 + dx) v0 ori0 (realToFrac gain0)
 
@@ -64,16 +75,18 @@ setListenerPosition ::
     V3 Float ->
     SF a Listener ->
     SF a Listener
+{-# INLINE setListenerPosition #-}
 setListenerPosition =
-    undefined
+    undefined -- TODO
 
 -----------------------------------------------------------
 withListenerVelocity ::
     SF a (V3 Float) ->
     SF a Listener ->
     SF a Listener
+{-# INLINE withListenerVelocity #-}
 withListenerVelocity =
-    undefined
+    undefined -- TODO
 
 -----------------------------------------------------------
 updateListener :: (MonadIO m) => Maybe Listener -> Listener -> m ()
