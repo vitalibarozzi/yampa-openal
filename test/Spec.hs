@@ -24,12 +24,13 @@ data State = State
     , bar :: Event (Map AL.Source (SF State Source) -> Map AL.Source (SF State Source))
     }
 
+-----------------------------------------------------------
+initialState :: State
 initialState = State 0 NoEvent
 
 -----------------------------------------------------------
 main :: IO ()
 main = do
-    let tdelay = 1
     dtRef <- newIORef 0
     let
     let mySoundstage = soundstage_ mempty 1 AL.InverseDistance 0 0 1 (\State{..} -> bar)
@@ -51,13 +52,15 @@ main = do
                 _________ -> [sm, sm1, sm2, sm3, sm4]
         loadSources
             handle
+            -- TODO test adding and removing sources dynamically in the middle of the program
             [ mkSrc
                 ogsrc
-                [audio]
+                [hello]
+                --[sm,sm,sm1,sm1,sm1,sm2,sm2,sm2,sm3,sm3,sm3,sm2,sm2,sm2,sm1]
                 \s ->s
-                    & setOffset 80.8
-                    & withPitch (constant (-0.85))
-                    & withGain  (constant (1.15))
+                    -- & setOffset 80.8
+                     & withPitch (constant (-0.05))
+                     & withGain  (constant (-0.15))
             ]
         t0 <- getCPUTime
         void $ timeout 10_000_000 $ forever do

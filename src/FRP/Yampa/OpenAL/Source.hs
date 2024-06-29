@@ -19,7 +19,6 @@ module FRP.Yampa.OpenAL.Source (
             sourceMaxDistance,
             sourceRelative,
             sourceGainBounds,
-            sourceLoopingMode,
             sourceGain,
             sourcePosition,
             sourceVelocity,
@@ -27,13 +26,12 @@ module FRP.Yampa.OpenAL.Source (
             sourceConeAngles,
             sourceConeOuterGain
             ),
-        --
-        --
         sourceID,
         sourceOffset,
         sourceState,
         sourcePitch,
         sourceBufferQueue,
+        sourceLoopingMode,
         --
         emptySource,
         source,
@@ -42,13 +40,13 @@ module FRP.Yampa.OpenAL.Source (
         --
         setRelative,
         setPosition,
-        -- TODO
-        --setLoopingMode,
+        setLoopingMode,-- TODO probably should be public and done only with the smart constructor, never after
+        setSourceType, -- TODO probably should be done public and only with the smart constructor, never after
         --setMaxDistance,
         --setReferenceDistance,
         --setRolloffFactor,
         setOffset,
-        setState,
+        setState, -- TODO replace with withState
         setQueue,
         ---- TODO
         -- withState,
@@ -80,19 +78,25 @@ import qualified Sound.OpenAL as AL
 queue to be played.
 -}
 data Source = Source
-    { _sourceID {-----------------} :: !AL.Source -- Internal.
-    , _sourceState {--------------} :: !AL.SourceState -- Internal.
-    , _sourcePitch {--------------} :: !Pitch -- Internal.
-    , _sourceOffset {-------------} :: !Time -- Internal.
-    , _sourceBufferQueue {--------} :: ![AL.Buffer] -- Empty buffer queues are valid.
-    , sourceLoopingMode {---------} :: !AL.LoopingMode -- Static.
-    , sourceRelative {------------} :: !AL.SourceRelative -- Static.
-    , sourceRolloffFactor {-------} :: !Factor -- Static.
-    , sourceReferenceDistance {---} :: !Meters -- Static.
-    , sourceMaxDistance {---------} :: !Meters -- Static.
+    -- PRIVATE------------------------------
+    { _sourceID {-----------------} :: !AL.Source -- immutable.
+    , _sourceChannelType {--------} :: !ChannelType -- immutable. If stereo cannot use positional sound.
+    , _sourceBufferMagnitude {----} :: !Magnitude -- immutable.
+    , _sourceBufferSampleRate {---} :: !Float  -- immutable.
+    , _sourceLoopingMode {--------} :: !AL.LoopingMode
+    , _sourceBufferQueue {--------} :: ![AL.Buffer] --Empty buffer queues are valid.
+    , _sourcePitch {--------------} :: !Pitch
+    , _sourceOffset {-------------} :: !Time
+    , _sourceState {--------------} :: !AL.SourceState
+    , _sourceType {---------------} :: !AL.SourceType
+    -- PUBLIC ----------------------------------
+    , sourceRolloffFactor {-------} :: !Factor
+    , sourceReferenceDistance {---} :: !Meters
+    , sourceMaxDistance {---------} :: !Meters
     , sourceGain {----------------} :: !AL.Gain
-    , sourceGainBounds {----------} :: !(AL.Gain, AL.Gain) -- Static.
+    , sourceGainBounds {----------} :: !(AL.Gain, AL.Gain)
     , sourceConeOuterGain {-------} :: !AL.Gain -- Gain outside the cone.
+    , sourceRelative {------------} :: !AL.SourceRelative -- Decides in relation to what the source moves.
     , sourcePosition {------------} :: !(V3 Meters)
     , sourceVelocity {------------} :: !(V3 MetersPerSecond)
     , sourceDirection {-----------} :: !(V3 Meters)
@@ -106,28 +110,38 @@ emptySource :: AL.Source -> Source
 {-# INLINE emptySource #-}
 emptySource sid =
     Source
-        sid
-        AL.Initial
-        1
-        0
-        []
-        AL.OneShot
-        AL.World
-        1
-        1
-        1_000
-        0.7
-        (0.2, 2.0)
-        0.5
-        0
-        0
-        (V3 0 (-1) 0)
-        (360, 360)
+        { _sourceID {-----------------} = sid
+        , _sourceChannelType {--------} = Mono
+        , _sourceBufferMagnitude {----} = Bit16
+        , _sourceBufferSampleRate {---} = 0
+        , _sourceLoopingMode {--------} = AL.OneShot
+        , _sourceBufferQueue {--------} = []
+        , _sourcePitch {--------------} = 0
+        , _sourceOffset {-------------} = 0
+        , _sourceState {--------------} = AL.Initial
+        , _sourceType {---------------} = AL.Undetermined
+        , sourceRolloffFactor {-------} = 0
+        , sourceReferenceDistance {---} = 0
+        , sourceMaxDistance {---------} = 0
+        , sourceGain {----------------} = 0
+        , sourceGainBounds {----------} = (0,0)
+        , sourceConeOuterGain {-------} = 0
+        , sourceRelative {------------} = AL.World
+        , sourcePosition {------------} = 0
+        , sourceVelocity {------------} = 0
+        , sourceDirection {-----------} = 0
+        , sourceConeAngles {----------} = (0,0)
+        }
 
 -----------------------------------------------------------
 sourceID :: Source -> AL.Source
 {-# INLINE sourceID #-}
 sourceID = _sourceID
+
+-----------------------------------------------------------
+sourceType :: Source -> AL.SourceType
+{-# INLINE sourceType #-}
+sourceType = _sourceType
 
 -----------------------------------------------------------
 sourceOffset :: Source -> Time
@@ -148,6 +162,11 @@ sourcePitch = _sourcePitch
 sourceBufferQueue :: Source -> [AL.Buffer]
 {-# INLINE sourceBufferQueue #-}
 sourceBufferQueue = _sourceBufferQueue
+
+
+-----------------------------------------------------------
+sourceLoopingMode :: Source -> AL.LoopingMode
+sourceLoopingMode = _sourceLoopingMode
 
 -----------------------------------------------------------
 
@@ -177,21 +196,22 @@ source name queue =
         (Just AL.Playing)
         Nothing
         Nothing
+        Nothing
 
 -----------------------------------------------------------
 setState :: AL.SourceState -> SF a Source -> SF a Source
 {-# INLINE setState #-}
-setState state src = do
-    switch (nowEvent src) \src0 ->
+setState state src = 
+    switchNow src \src0 ->
         source_
             (_sourceID src0)
             (_sourceBufferQueue src0)
-            (Just $ _sourceOffset src0)
-            (Just (sourceGainBounds src0))
-            (Just (sourceConeOuterGain src0))
-            (Just (sourceRelative src0))
+            (Just $ sourceOffset src0)
+            (Just $ sourceGainBounds src0)
+            (Just $ sourceConeOuterGain src0)
+            (Just $ sourceRelative src0)
             (Just $ sourceRolloffFactor src0)
-            (Just $ _sourcePitch src0)
+            (Just $ sourcePitch src0)
             (Just $ sourcePosition src0)
             (Just $ sourceVelocity src0)
             (Just $ sourceDirection src0)
@@ -199,14 +219,15 @@ setState state src = do
             (Just state)
             (Just $ sourceGain src0)
             (Just $ sourceLoopingMode src0)
+            (Just $ sourceType src0)
 
 -----------------------------------------------------------
 
 -- | Will jump to this exact offset.
 setOffset :: Time -> SF a Source -> SF a Source
 {-# INLINE setOffset #-}
-setOffset offset src = do
-    switch (nowEvent src) \src0 ->
+setOffset offset src = 
+    switchNow src \src0 ->
         source_
             (_sourceID src0)
             (_sourceBufferQueue src0)
@@ -215,20 +236,21 @@ setOffset offset src = do
             (Just (sourceConeOuterGain src0))
             (Just (sourceRelative src0))
             (Just $ sourceRolloffFactor src0)
-            (Just $ _sourcePitch src0)
+            (Just $ sourcePitch src0)
             (Just $ sourcePosition src0)
             (Just $ sourceVelocity src0)
             (Just $ sourceDirection src0)
             (Just $ sourceConeAngles src0)
-            (Just $ AL.Playing)
+            (Just $ sourceState src0)
             (Just $ sourceGain src0)
             (Just $ sourceLoopingMode src0)
+            (Just $ sourceType src0)
 
 -----------------------------------------------------------
 setQueue :: [AL.Buffer] -> SF a Source -> SF a Source
 {-# INLINE setQueue #-}
 setQueue queue src =
-    switch (nowEvent src) \src0 ->
+    switchNow src \src0 ->
         source_
             (_sourceID src0)
             queue
@@ -245,12 +267,13 @@ setQueue queue src =
             (Just $ _sourceState src0)
             (Just $ sourceGain src0)
             (Just $ sourceLoopingMode src0)
+            (Just $ sourceType src0)
 
 -----------------------------------------------------------
 setRelative :: AL.SourceRelative -> SF a Source -> SF a Source
 {-# INLINE setRelative #-}
 setRelative relative src =
-    switch (nowEvent src) \src0 ->
+    switchNow src \src0 ->
         source_
             (_sourceID src0)
             (sourceBufferQueue src0)
@@ -267,12 +290,13 @@ setRelative relative src =
             (Just $ _sourceState src0)
             (Just $ sourceGain src0)
             (Just $ sourceLoopingMode src0)
+            (Just $ sourceType src0)
 
 -----------------------------------------------------------
 setPosition :: V3 Float -> SF a Source -> SF a Source
 {-# INLINE setPosition #-}
 setPosition pos src =
-    switch (nowEvent src) \src0 ->
+    switchNow src \src0 ->
         source_
             (sourceID src0)
             (sourceBufferQueue src0)
@@ -289,6 +313,53 @@ setPosition pos src =
             (Just $ _sourceState src0)
             (Just $ sourceGain src0)
             (Just $ sourceLoopingMode src0)
+            (Just $ sourceType src0)
+
+-----------------------------------------------------------
+setLoopingMode :: AL.LoopingMode -> SF a Source -> SF a Source
+{-# INLINE setLoopingMode #-}
+setLoopingMode loopingMode src =
+    switchNow src \src0 ->
+        source_
+            (sourceID src0)
+            (sourceBufferQueue src0)
+            (Just (_sourceOffset src0))
+            (Just (sourceGainBounds src0))
+            (Just (sourceConeOuterGain src0))
+            (Just (sourceRelative src0))
+            (Just $ sourceRolloffFactor src0)
+            (Just $ _sourcePitch src0)
+            (Just $ sourcePosition src0)
+            (Just $ sourceVelocity src0)
+            (Just $ sourceDirection src0)
+            (Just $ sourceConeAngles src0)
+            (Just $ _sourceState src0)
+            (Just $ sourceGain src0)
+            (Just loopingMode)
+            (Just $ sourceType src0)
+
+-----------------------------------------------------------
+setSourceType :: AL.SourceType -> SF a Source -> SF a Source
+{-# INLINE setSourceType #-}
+setSourceType srcType src =
+    switchNow src \src0 ->
+        source_
+            (sourceID src0)
+            (sourceBufferQueue src0)
+            (Just (_sourceOffset src0))
+            (Just (sourceGainBounds src0))
+            (Just (sourceConeOuterGain src0))
+            (Just (sourceRelative src0))
+            (Just $ sourceRolloffFactor src0)
+            (Just $ _sourcePitch src0)
+            (Just $ sourcePosition src0)
+            (Just $ sourceVelocity src0)
+            (Just $ sourceDirection src0)
+            (Just $ sourceConeAngles src0)
+            (Just $ _sourceState src0)
+            (Just $ sourceGain src0)
+            (Just $ sourceLoopingMode src0)
+            (Just srcType)
 
 -----------------------------------------------------------
 
@@ -307,41 +378,43 @@ withGain gainSF srcSF = proc a -> do
 --    will be running faster or slower in relation to the source.
 withPitch :: SF a Pitch -> SF a Source -> SF a Source
 {-# INLINE withPitch #-}
-withPitch pitchSF src = do
-    (src &&& pitchSF) >>> proc (src0, pitch) -> do
-        let newSource =
-                source_
-                    (_sourceID src0)
-                    (_sourceBufferQueue src0)
-                    (Just $ _sourceOffset src0)
-                    (Just (sourceGainBounds src0))
-                    (Just (sourceConeOuterGain src0))
-                    (Just (sourceRelative src0))
-                    (Just $ sourceRolloffFactor src0)
-                    (Just (pitch + _sourcePitch src0))
-                    (Just $ sourcePosition src0)
-                    (Just $ sourceVelocity src0)
-                    (Just $ sourceDirection src0)
-                    (Just $ sourceConeAngles src0)
-                    (Just $ _sourceState src0)
-                    (Just $ sourceGain src0)
-                    (Just $ sourceLoopingMode src0)
-        let ev = if pitch /= _sourcePitch src0 then Event () else NoEvent
-        rSwitch identity -< (src0, tag ev newSource)
+withPitch pitchSF src = (src &&& pitchSF) >>> proc (src0, pitch) -> do
+    let newSource =
+            source_
+                (sourceID src0)
+                (sourceBufferQueue src0)
+                (Just $ sourceOffset src0)
+                (Just (sourceGainBounds src0))
+                (Just (sourceConeOuterGain src0))
+                (Just (sourceRelative src0))
+                (Just $ sourceRolloffFactor src0)
+                (Just (pitch + sourcePitch src0))
+                (Just $ sourcePosition src0)
+                (Just $ sourceVelocity src0)
+                (Just $ sourceDirection src0)
+                (Just $ sourceConeAngles src0)
+                (Just $ sourceState src0)
+                (Just $ sourceGain src0)
+                (Just $ sourceLoopingMode src0)
+                (Just $ sourceType src0)
+    let ev = if pitch /= _sourcePitch src0 then Event () else NoEvent
+    rSwitch identity -< (src0, tag ev newSource)
 
 -----------------------------------------------------------
--- | Extracts the buffer stream from the `a` value.
+-- | Extracts the buffer stream from the `a` value. Remember
+-- that the buffers in queue need to all have the same format
+-- and sample-rate.
 streaming ::
     (a -> [AL.Buffer]) ->
     SF a Source ->
     SF a Source
 {-# INLINE streaming #-}
 streaming stream src =
-    (src &&& arr stream) >>> proc (src0, bs) -> do
+    src &&& arr stream >>> proc (src0, queue) -> do
         let newSource =
                 source_
                     (_sourceID src0)
-                    bs
+                    queue
                     (Just (_sourceOffset src0))
                     (Just (sourceGainBounds src0))
                     (Just (sourceConeOuterGain src0))
@@ -354,10 +427,13 @@ streaming stream src =
                     (Just $ sourceConeAngles src0)
                     (Just $ _sourceState src0)
                     (Just $ sourceGain src0)
-                    (Just $ sourceLoopingMode src0)
-        let ev = if bs /= [] then Event () else NoEvent
+                    (Just AL.OneShot)
+                    (Just AL.Streaming)
+        let ev = if queue /= [] then Event () else NoEvent
         rSwitch identity -< (src0, tag ev newSource)
 
+
+-----------------------------------------------------------
 {- | Smart constructor for a sound source. It handles stuff
 like keeping the offset correctly when we speed up or slow
 down time by changing pitch, for example. Also handles the
@@ -379,24 +455,32 @@ source_ ::
     Maybe AL.SourceState -> -- source state
     Maybe AL.Gain -> -- source gain
     Maybe AL.LoopingMode -> -- source looping mode
+    Maybe AL.SourceType -> -- source looping mode
     SF a Source
 {-# INLINE source_ #-}
 source_
     _sourceID
     _sourceBufferQueue
     (fromMaybe {------------} 0 -> sourceStartOffset)
-    (fromMaybe {-----} (0.2, 2) -> sourceGainBounds)
-    (fromMaybe {---------} 0.01 -> sourceConeOuterGain)
-    (fromMaybe {-----} AL.World -> sourceRelative)
+    (fromMaybe {-----} (0.1, 2) -> sourceGainBounds)
+    (fromMaybe {---------} 0.0 -> sourceConeOuterGain)
+    (fromMaybe {-----} AL.Listener -> sourceRelative)
     (fromMaybe {------------} 1 -> sourceRolloffFactor)
     (fromMaybe {------------} 1 -> _sourcePitch)
-    (fromMaybe {------------} 0 -> position0)
-    (fromMaybe {------------} 0 -> sourceVelocity)
-    (fromMaybe {------------} 0 -> sourceDirection)
-    (fromMaybe {---} (360, 360) -> sourceConeAngles)
+    (fromMaybe {--} (V3 (-10) 0 1) -> position0)
+    (fromMaybe {--} (V3 10 0 0) -> sourceVelocity)
+    (fromMaybe {---} (V3 0 0 0) -> sourceDirection)
+    (fromMaybe {---} (90, 120) -> sourceConeAngles)
     (fromMaybe {---} AL.Initial -> state0)
     (fromMaybe {------------} 1 -> sourceGain)
-    (fromMaybe {---} AL.OneShot -> sourceLoopingMode) =
+    (fromMaybe {---} AL.OneShot -> _sourceLoopingMode)
+    (fromMaybe {----} AL.Static -> _sourceType) =
+
+    -- TODO add to the arguments
+        --, _sourceChannelType {--------} :: !ChannelType -- immutable. If stereo cannot use positional sound.
+        --, _sourceBufferMagnitude {----} :: !Magnitude -- immutable.
+        --, _sourceBufferSampleRate {---} :: !Float  -- immutable.
+
         proc a -> do
             t <- Yampa.time -< a
             sourcePosition <- arr (+ position0) <<< Yampa.integral -< sourceVelocity
@@ -407,7 +491,11 @@ source_
                         { sourceReferenceDistance = 1 -- 1M
                         , sourceMaxDistance = 1_000 -- 1KM
                         , _sourceState = state0
-                        , _sourceOffset = sourceStartOffset + (correction state0 * t * _sourcePitch)
+                        , _sourceOffset = sourceStartOffset + correction state0 * t * _sourcePitch
+                        , _sourceChannelType = Mono -- TODO
+                        , _sourceBufferMagnitude = Bit16 -- TODO
+                        , _sourceBufferSampleRate = 41000 -- TODO
+                        , _sourceType = AL.Static -- TODO
                         , ..
                         }
 
@@ -421,65 +509,90 @@ have changed.
 updateSource :: (MonadIO m) => Source -> Source -> m ()
 {-# INLINEABLE updateSource #-}
 updateSource s0 s1 = do
+    -- TODO
+    -- Undetermined	 
+    -- Static	 
+    -- Streaming
     handleBuffers (_sourceID s1) -- we make changes to the buffers
-    handleState (_sourceID s1) -- we decide if the source should keep playing or stop or pause
     handleFields (_sourceID s1) -- we change the source data (pausing if needed, then resuming)
+    handleState (_sourceID s1) -- we decide if the source should keep playing or stop or pause
   where
     handleBuffers sid = do
 
         -- TODO we need a whole set of functionality here to support playing buffers when time is passing backwards
-
-        let buffChanged = _sourceBufferQueue s0 /= _sourceBufferQueue s1
-
-        when buffChanged do
+        when (_sourceBufferQueue s0 /= _sourceBufferQueue s1) do
             unless (null (_sourceBufferQueue s1)) do
+                -- TODO we also need to consider the state inside the sources
                 get (AL.sourceState sid) >>= \case
+
+
                     AL.Playing -> do
                         AL.stop [sid]
-                        pn <- get (AL.buffersProcessed sid)
-                        when (pn > 0) (void (AL.unqueueBuffers sid pn))
+                        unqueuProcessed
                         AL.queueBuffers sid (_sourceBufferQueue s1)
                         AL.play [sid]
                     AL.Initial -> do
-                        pn <- get (AL.buffersProcessed sid)
-                        when (pn > 0) (void (AL.unqueueBuffers sid pn))
-                        qn <- get (AL.buffersQueued sid)
-                        when (qn > 0) (AL.buffer sid $= Nothing)
+                        unqueuProcessed
+                        unqueueUnprocessed
                         AL.queueBuffers sid (_sourceBufferQueue s1)
                     AL.Paused -> do
                         AL.stop [sid]
-                        pn <- get (AL.buffersProcessed sid)
-                        when (pn > 0) (void (AL.unqueueBuffers sid pn))
-                        qn <- get (AL.buffersQueued sid)
-                        when (qn > 0) (AL.buffer sid $= Nothing)
+                        unqueuProcessed
+                        unqueueUnprocessed
                         AL.queueBuffers sid (_sourceBufferQueue s1)
                         AL.pause [sid]
                     AL.Stopped -> do
-                        pn <- get (AL.buffersProcessed sid)
-                        when (pn > 0) (void (AL.unqueueBuffers sid pn))
-                        qn <- get (AL.buffersQueued sid)
-                        when (qn > 0) (AL.buffer sid $= Nothing)
+                        unqueuProcessed
+                        unqueueUnprocessed
                         AL.queueBuffers sid (_sourceBufferQueue s1)
-                        when (_sourceState s0 == AL.Playing) (AL.play [sid])
-    
+                        when (_sourceState s0 == AL.Playing) (AL.play [sid]) -- why s0?
+      where
+
+        unqueuProcessed = do
+            -- TODO only unqueu if sourceType == AL.Streaming
+            pn <- get (AL.buffersProcessed sid)
+            when (pn > 0) (void (AL.unqueueBuffers sid pn))
+
+        unqueueUnprocessed = do
+            -- TODO only unqueu if sourceType == AL.Streaming
+            qn <- get (AL.buffersQueued sid)
+            when (qn > 0) (AL.buffer sid $= Nothing)
+
     -- TODO we need a general function that uppon receiving a buffer ,returns its inverse (in a new buffer) copyReversed :: ...etc
     handleFields sid = do
         offset <- get (AL.secOffset sid)
         let diff = realToFrac (_sourceOffset s1) - offset
-        ($=?) (AL.secOffset sid) (_sourceState s1 == AL.Initial || diff > 0.01) (abs (realToFrac (_sourceOffset s1))) -- TODO when playing in reverse we need to adjust the offset so we play in the right place of the reversed buffer
-        ($=?) (AL.pitch sid) (_sourcePitch s1 /= _sourcePitch s0) (realToFrac (abs (_sourcePitch s1)))
-        ($=?) (AL.coneAngles sid) (sourceConeAngles s1 /= sourceConeAngles s0) (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
-        ($=?) (AL.coneOuterGain sid) (sourceConeOuterGain s1 /= sourceConeOuterGain s0) (sourceConeOuterGain s1)
-        ($=?) (AL.direction sid) (sourceDirection s1 /= sourceDirection s0) (_v3ToVector (sourceDirection s1))
-        ($=?) (AL.gainBounds sid) (sourceGainBounds s1 /= sourceGainBounds s0) (let foox = fst (sourceGainBounds s1) in (foox, snd (sourceGainBounds s1)))
-        ($=?) (AL.loopingMode sid) (sourceLoopingMode s1 /= sourceLoopingMode s0) (sourceLoopingMode s1)
-        ($=?) (AL.maxDistance sid) (sourceMaxDistance s1 /= sourceMaxDistance s0) (realToFrac (sourceMaxDistance s1))
-        ($=?) (AL.referenceDistance sid) (sourceReferenceDistance s1 /= sourceReferenceDistance s0) (realToFrac (sourceReferenceDistance s1))
-        ($=?) (AL.rolloffFactor sid) (sourceRolloffFactor s1 /= sourceRolloffFactor s0) (realToFrac (sourceRolloffFactor s1))
-        ($=?) (AL.sourceGain sid) (sourceGain s0 /= sourceGain s1) (abs (sourceGain s1))
-        ($=?) (AL.sourcePosition sid) (sourcePosition s1 /= sourcePosition s0) (_v3ToVertex (sourcePosition s1))
-        ($=?) (AL.sourceRelative sid) (sourceRelative s1 /= sourceRelative s0) (sourceRelative s1)
-        ($=?) (AL.sourceVelocity sid) (sourceVelocity s1 /= sourceVelocity s0) (_v3ToVector (sourceVelocity s1))
+        if _sourceState s0 == AL.Initial -- TODO || sourceType == AL.Undetermined
+            then do
+                AL.secOffset sid $= abs (realToFrac (_sourceOffset s1)) -- TODO when playing in reverse we need to adjust the offset so we play in the right place of the reversed buffer
+                AL.pitch sid $= realToFrac (abs (_sourcePitch s1))
+                AL.coneAngles sid $= (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+                AL.coneOuterGain sid $= sourceConeOuterGain s1
+                AL.direction sid $= _v3ToVector (sourceDirection s1)
+                AL.gainBounds sid $= (let foox = fst (sourceGainBounds s1) in (foox, snd (sourceGainBounds s1)))
+                AL.loopingMode sid $= sourceLoopingMode s1
+                AL.maxDistance sid $= realToFrac (sourceMaxDistance s1)
+                AL.referenceDistance sid $= realToFrac (sourceReferenceDistance s1)
+                AL.rolloffFactor sid $= realToFrac (sourceRolloffFactor s1)
+                AL.sourceGain sid $= abs (sourceGain s1)
+                AL.sourcePosition sid $= _v3ToVertex (sourcePosition s1)
+                AL.sourceRelative sid $= sourceRelative s1
+                AL.sourceVelocity sid $= _v3ToVector (sourceVelocity s1)
+            else do
+                setWhen (AL.secOffset sid) (_sourceState s1 == AL.Initial || diff > 0.01) (abs (realToFrac (_sourceOffset s1))) -- TODO when playing in reverse we need to adjust the offset so we play in the right place of the reversed buffer
+                setWhen (AL.pitch sid) (_sourcePitch s1 /= _sourcePitch s0) (realToFrac (abs (_sourcePitch s1)))
+                setWhen (AL.coneAngles sid) (sourceConeAngles s1 /= sourceConeAngles s0) (realToFrac $ fst $ sourceConeAngles s1, realToFrac $ snd (sourceConeAngles s1))
+                setWhen (AL.coneOuterGain sid) (sourceConeOuterGain s1 /= sourceConeOuterGain s0) (sourceConeOuterGain s1)
+                setWhen (AL.direction sid) (sourceDirection s1 /= sourceDirection s0) (_v3ToVector (sourceDirection s1))
+                setWhen (AL.gainBounds sid) (sourceGainBounds s1 /= sourceGainBounds s0) (let foox = fst (sourceGainBounds s1) in (foox, snd (sourceGainBounds s1)))
+                setWhen (AL.loopingMode sid) (sourceLoopingMode s1 /= sourceLoopingMode s0) (sourceLoopingMode s1)
+                setWhen (AL.maxDistance sid) (sourceMaxDistance s1 /= sourceMaxDistance s0) (realToFrac (sourceMaxDistance s1))
+                setWhen (AL.referenceDistance sid) (sourceReferenceDistance s1 /= sourceReferenceDistance s0) (realToFrac (sourceReferenceDistance s1))
+                setWhen (AL.rolloffFactor sid) (sourceRolloffFactor s1 /= sourceRolloffFactor s0) (realToFrac (sourceRolloffFactor s1))
+                setWhen (AL.sourceGain sid) (sourceGain s0 /= sourceGain s1) (abs (sourceGain s1))
+                setWhen (AL.sourcePosition sid) (sourcePosition s1 /= sourcePosition s0) (_v3ToVertex (sourcePosition s1))
+                setWhen (AL.sourceRelative sid) (sourceRelative s1 /= sourceRelative s0) (sourceRelative s1)
+                setWhen (AL.sourceVelocity sid) (sourceVelocity s1 /= sourceVelocity s0) (_v3ToVector (sourceVelocity s1))
 
     handleState sid = do
         when (notPlaying && _sourceState s1 == AL.Playing) (AL.play [sid])
@@ -489,12 +602,3 @@ updateSource s0 s1 = do
         notPlaying = _sourceState s0 == AL.Initial || _sourceState s0 == AL.Stopped || _sourceState s0 == AL.Paused
         notPaused = _sourceState s0 == AL.Stopped || _sourceState s0 == AL.Initial
         notStopped = _sourceState s0 == AL.Initial || _sourceState s0 == AL.Paused
-
-
------------------------------------------------------------
--- | Look for equivalent in yampa api.
-nowEvent :: SF a b -> SF a (b, Event b)
-{-# INLINE nowEvent #-}
-nowEvent src =
-    let tagEv (src0, ev) = (src0, tag ev src0)
-     in src >>> (identity &&& now ()) >>> arr tagEv

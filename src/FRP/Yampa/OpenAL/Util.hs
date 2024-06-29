@@ -12,7 +12,9 @@ module FRP.Yampa.OpenAL.Util (
     _v3ToVector,
     _vectorToV3,
     appName,
-    ($=?),
+    setWhen,
+    nowEvent,
+    switchNow,
 )
 where
 
@@ -24,9 +26,21 @@ import Linear as L
 import qualified Sound.OpenAL as AL
 
 -----------------------------------------------------------
-($=?) :: (MonadIO m) => StateVar x -> Bool -> x -> m ()
-{-# INLINE ($=?) #-}
-($=?) field cond value =
+switchNow :: SF a c -> (c -> SF a c) -> SF a c
+switchNow src = switch (nowEvent src)
+
+-----------------------------------------------------------
+-- TODO Look for equivalent in yampa api.
+nowEvent :: SF a b -> SF a (b, Event b)
+{-# INLINE nowEvent #-}
+nowEvent src =
+    let tagEv (src0, ev) = (src0, tag ev src0)
+     in src >>> (FRP.Yampa.identity &&& now ()) >>> arr tagEv
+
+-----------------------------------------------------------
+setWhen :: (MonadIO m) => StateVar x -> Bool -> x -> m ()
+{-# INLINE setWhen #-}
+setWhen field cond value =
     when cond (field $= value)
 
 ------------------------------------------------------------
@@ -112,4 +126,5 @@ instance (Eq a, Floating a) => VectorSpace (V3 a) a where
     dot = L.dot
 
 ---
+appName :: String
 appName = "[Yampa-OpenAL]"

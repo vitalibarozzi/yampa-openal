@@ -15,14 +15,15 @@ import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.IORef
-import Data.Maybe
 import FRP.Yampa
 import qualified FRP.Yampa as Yampa
 import FRP.Yampa.OpenAL.Soundstage
 import FRP.Yampa.OpenAL.Types
 import FRP.Yampa.OpenAL.Util
 import qualified Sound.ALUT.Initialization as AL
-import qualified Sound.OpenAL as AL
+import Sound.OpenAL.AL.StringQueries
+import Sound.OpenAL.AL.Extensions
+import Data.StateVar
 
 -------------------------------------------------------------------------------
 -- SIMPLE API -----------------------------------------------------------------
@@ -37,7 +38,7 @@ withSoundstage ::
     m b
 {-# INLINE withSoundstage #-}
 withSoundstage a sf reactimate_ =
-    withAL Nothing do
+    withAL do
         reactimate_ <=< reactInitSoundstage a sf
 
 -------------------------------------------------------------------------------
@@ -47,26 +48,14 @@ withSoundstage a sf reactimate_ =
 -----------------------------------------------------------
 withAL ::
     (MonadIO m) =>
-    -- | Error handler.
-    Maybe ([AL.ALError] -> IO ()) ->
     -- | App cont.
     (ALApp -> m a) ->
     m a
 {-# INLINE withAL #-}
-withAL clientErrorHandler k = AL.runALUT appName [] \_ _ -> do
-    ___ <- liftIO (forkIO (forever handleError))
-    ref <- liftIO (newMVar mempty)
-    ioref <- liftIO (newIORef mempty)
+withAL k = AL.runALUT appName [] \_ _ -> do
+    ref <- liftIO (newMVar mempty) -- TODO not used anymore
+    ioref <- liftIO (newIORef mempty) -- TODO not used anymore
     k (ALApp ref ioref)
-  where
-    handleError = do
-        threadDelay 1
-        errors <- AL.alErrors
-        fromMaybe internalErrorHandler clientErrorHandler errors
-    internalErrorHandler errors =
-        if not (null errors)
-            then putStrLn (appName <> show errors)
-            else threadDelay 5_000_000
 
 -----------------------------------------------------------
 reactInitSoundstage ::
@@ -77,6 +66,12 @@ reactInitSoundstage ::
     m (ReactHandle a Soundstage)
 {-# INLINE reactInitSoundstage #-}
 reactInitSoundstage a sf _ = liftIO do
+    ver <- liftIO (get alVersion)
+    ven <- liftIO (get alVendor)
+    ren <- liftIO (get alRenderer)
+    putStrLn (appName <> " Version: " <> ver)
+    putStrLn (appName <> " Vendor : " <> ven)
+    putStrLn (appName <> " Render : " <> ren)
     soundstageRef <- newMVar Nothing
     Yampa.reactInit (pure a) (actuate soundstageRef) sf
   where

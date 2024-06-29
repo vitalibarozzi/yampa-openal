@@ -91,16 +91,16 @@ withListenerVelocity =
 -----------------------------------------------------------
 updateListener :: (MonadIO m) => Maybe Listener -> Listener -> m ()
 {-# INLINE updateListener #-}
-updateListener mlistener0 listener1 = do
-    liftIO do
-        case mlistener0 of
-            Nothing -> do
-                ($=) AL.listenerPosition (_v3ToVertex (listenerPosition listener1))
-                ($=) AL.listenerVelocity (_v3ToVector (listenerVelocity listener1))
-                ($=) AL.orientation (bimap _v3ToVector _v3ToVector (listenerOrientation listener1))
-                ($=) AL.listenerGain (abs (listenerGain listener1))
-            Just _listener0 -> do
-                ($=?) AL.listenerPosition True (_v3ToVertex (listenerPosition listener1)) -- TODO check difference
-                ($=?) AL.listenerVelocity True (_v3ToVector (listenerVelocity listener1)) -- TODO check difference
-                ($=?) AL.orientation True (bimap _v3ToVector _v3ToVector (listenerOrientation listener1)) -- TODO check difference
-                ($=?) AL.listenerGain True (abs (listenerGain listener1)) -- TODO check difference
+updateListener mlistener0 listener1 = liftIO do
+    case mlistener0 of
+        Nothing -> do
+            AL.listenerPosition $= _v3ToVertex (listenerPosition listener1)
+            AL.listenerVelocity $= _v3ToVector (listenerVelocity listener1)
+            AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation listener1)
+            AL.listenerGain $= abs (listenerGain listener1)
+        Just _listener0 -> do
+            -- TODO
+            setWhen AL.listenerPosition True (_v3ToVertex (listenerPosition listener1)) -- TODO check difference
+            setWhen AL.listenerVelocity True (_v3ToVector (listenerVelocity listener1)) -- TODO check difference
+            setWhen AL.orientation True (bimap _v3ToVector _v3ToVector (listenerOrientation listener1)) -- TODO check difference
+            setWhen AL.listenerGain True (abs (listenerGain listener1)) -- TODO check difference

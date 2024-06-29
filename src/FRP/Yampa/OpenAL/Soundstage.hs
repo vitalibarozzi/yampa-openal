@@ -41,7 +41,7 @@ import FRP.Yampa.OpenAL.Source (
     updateSource,
  )
 import FRP.Yampa.OpenAL.Types (Factor, MetersPerSecond)
-import FRP.Yampa.OpenAL.Util (appName, ($=?), _v3ToVector, _v3ToVertex)
+import FRP.Yampa.OpenAL.Util (appName, setWhen, _v3ToVector, _v3ToVertex)
 import Linear as L (V3 (..))
 import qualified Sound.OpenAL as AL
 
@@ -100,7 +100,7 @@ soundstage_ initialSources factor model pos vel gain k =
         <*> pure 343.3
         <*> pure model
         <*> listener_ (Just pos) (Just vel) (Just (V3 0 0 (-1), V3 0 1 0)) (Just (realToFrac gain))
-        <*> (initially 0 <<< Yampa.time) -- wtf?
+        <*> Yampa.time
 
 -----------------------------------------------------------
 updateSoundstage ::
@@ -119,9 +119,9 @@ updateSoundstage mss0 ss1 = do
             updateListener Nothing (soundstageListener ss1)
             forM_ sources1 \src1 -> updateSource (emptySource (sourceID src1)) src1
         Just ss0 -> do
-            ($=?) AL.speedOfSound (soundstageSpeedOfSound ss1 /= soundstageSpeedOfSound ss0) (abs (realToFrac $ soundstageSpeedOfSound ss1))
-            ($=?) AL.distanceModel (soundstageDistanceModel ss1 /= soundstageDistanceModel ss0) (soundstageDistanceModel ss1)
-            ($=?) AL.dopplerFactor (soundstageDopplerFactor ss1 /= soundstageDopplerFactor ss0) (abs (realToFrac $ soundstageDopplerFactor ss1))
+            setWhen AL.speedOfSound (soundstageSpeedOfSound ss1 /= soundstageSpeedOfSound ss0) (abs (realToFrac $ soundstageSpeedOfSound ss1))
+            setWhen AL.distanceModel (soundstageDistanceModel ss1 /= soundstageDistanceModel ss0) (soundstageDistanceModel ss1)
+            setWhen AL.dopplerFactor (soundstageDopplerFactor ss1 /= soundstageDopplerFactor ss0) (abs (realToFrac $ soundstageDopplerFactor ss1))
             updateListener (Just (soundstageListener ss0)) (soundstageListener ss1)
             forM_ (soundstageSources ss1) \src1 -> do
                 let sources0 = soundstageSources ss0
