@@ -79,5 +79,5 @@ reactInitSoundstage a sf _ = liftIO do
     Yampa.reactInit (pure a) (actuate soundstageRef) sf
   where
     actuate ssRef _ updated s1 = do
-        when updated (modifyMVar_ ssRef \ms0 -> updateSoundstage ms0 s1 >> return (Just s1))
+        when updated (modifyMVar_ ssRef \ms0 -> updateSoundstage True ms0 s1 >> return (Just s1))
         pure updated

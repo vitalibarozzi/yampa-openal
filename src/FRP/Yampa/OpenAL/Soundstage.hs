@@ -12,7 +12,7 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.IORef ()
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe ()
+import Data.Maybe
 import Data.StateVar
 import FRP.Yampa (
     Arrow (arr),
@@ -63,29 +63,35 @@ soundstage ::
 {-# INLINE soundstage #-}
 soundstage sources =
     soundstage_
-        sources
-        1
-        AL.InverseDistance
-        0
-        0
-        1
-        (const NoEvent)
+        (Just sources)
+        Nothing
+        Nothing
+        Nothing
+        Nothing
+        Nothing
+        Nothing
 
 -----------------------------------------------------------
--- For when you want to change the collection of source
--- signals of the soundstage at some point. (You probably will.)
--- TODO add maybes so we can create this using default values if needed
+-- Smart constructor for when you want to change the collection of source
+-- signals of the soundstage at some point. (You probably will on bigger projects.)
 soundstage_ ::
-    Map AL.Source (SF a Source) ->
-    Float ->
-    AL.DistanceModel ->
-    V3 Float ->
-    V3 Float ->
-    Double ->
-    (a -> Event (Map AL.Source (SF a Source) -> Map AL.Source (SF a Source))) ->
+    Maybe (Map AL.Source (SF a Source)) ->
+    Maybe Float ->
+    Maybe AL.DistanceModel ->
+    Maybe (V3 Float) ->
+    Maybe (V3 Float) ->
+    Maybe Double ->
+    Maybe (a -> Event (Map AL.Source (SF a Source) -> Map AL.Source (SF a Source))) ->
     SF a Soundstage
 {-# INLINE soundstage_ #-}
-soundstage_ initialSources factor model pos vel gain k =
+soundstage_ minitialSources mfactor mmodel mpos mvel mgain mk = do
+    let initialSources = fromMaybe mempty minitialSources
+    let factor = fromMaybe 1 mfactor
+    let model = fromMaybe AL.InverseDistance mmodel
+    let pos = fromMaybe (V3 0 0 0) mpos
+    let vel = fromMaybe (V3 0 0 0) mvel
+    let gain = fromMaybe 1 mgain
+    let k = fromMaybe (const NoEvent) mk
     Soundstage
         <$> (drpSwitchB initialSources <<< (identity &&& arr k))
         <*> pure factor
@@ -101,11 +107,12 @@ handles OpenAL errors.
 -}
 updateSoundstage ::
     (MonadIO m) =>
+    Bool -> -- ^ Throw on error.
     Maybe Soundstage ->
     Soundstage ->
     m ()
 {-# INLINEABLE updateSoundstage #-}
-updateSoundstage mss0 ss1 = do
+updateSoundstage throwOnError mss0 ss1 = do
     case mss0 of
         Nothing -> do
             ($=) AL.speedOfSound (abs (realToFrac $ soundstageSpeedOfSound ss1))
@@ -127,4 +134,5 @@ updateSoundstage mss0 ss1 = do
     liftIO $ internalErrorHandler =<< AL.alErrors
   where
     internalErrorHandler errors = do
-        unless (null errors) (error . show $ (appName <> show errors))
+        let debug = if throwOnError then error else putStrLn
+        unless (null errors) (debug . show $ (appName <> show errors))
