@@ -461,27 +461,28 @@ withGain gainSF srcSF = proc a -> do
 --    will be running faster or slower in relation to the source.
 withPitch :: SF a Pitch -> SF a Source -> SF a Source
 {-# INLINE withPitch #-}
-withPitch pitchSF src = (src &&& pitchSF) >>> proc (src0, pitch) -> do
-    let newSource =
-            source_
-                (sourceID src0)
-                (sourceBufferQueue src0)
-                (Just $ sourceOffset src0)
-                (Just (sourceGainBounds src0))
-                (Just (sourceConeOuterGain src0))
-                (Just (sourceRelative src0))
-                (Just $ sourceRolloffFactor src0)
-                (Just pitch)
-                (Just $ sourcePosition src0)
-                (Just $ sourceVelocity src0)
-                (Just $ sourceDirection src0)
-                (Just $ sourceConeAngles src0)
-                (Just $ sourceState src0)
-                (Just $ sourceGain src0)
-                (Just $ sourceLoopingMode src0)
-                (Just $ sourceType src0)
-    ev <- edge -< pitch /= _sourcePitch src0
-    rSwitch identity -< (src0, tag ev newSource)
+withPitch pitchSF src = 
+    (src &&& pitchSF) >>> proc (src0, pitch) -> do
+        let newSource =
+                source_
+                    (sourceID src0)
+                    (sourceBufferQueue src0)
+                    (Just $ sourceOffset src0)
+                    (Just (sourceGainBounds src0))
+                    (Just (sourceConeOuterGain src0))
+                    (Just (sourceRelative src0))
+                    (Just $ sourceRolloffFactor src0)
+                    (Just pitch)
+                    (Just $ sourcePosition src0)
+                    (Just $ sourceVelocity src0)
+                    (Just $ sourceDirection src0)
+                    (Just $ sourceConeAngles src0)
+                    (Just $ sourceState src0)
+                    (Just $ sourceGain src0)
+                    (Just $ sourceLoopingMode src0)
+                    (Just $ sourceType src0)
+        ev <- edge -< pitch /= _sourcePitch src0
+        rSwitch identity -< (src0, tag ev newSource)
 
 -----------------------------------------------------------
 -- | Extracts the buffer stream from the `a` value. Remember

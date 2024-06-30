@@ -1,12 +1,4 @@
 {-# LANGUAGE Arrows #-}
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LiberalTypeSynonyms #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use newtype instead of data" #-}
-{-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
 module FRP.Yampa.OpenAL.Listener (
     Listener (..),
@@ -14,6 +6,8 @@ module FRP.Yampa.OpenAL.Listener (
     listener_,
     setListenerPosition,
     withListenerVelocity,
+    withListenerOrientation,
+    withListenerGain,
     updateListener,
 )
 where
@@ -22,7 +16,7 @@ import Control.Monad.IO.Class
 import Data.Bifunctor
 import Data.Maybe
 import Data.StateVar (($=))
-import FRP.Yampa (SF, returnA)
+import FRP.Yampa (SF, arr, constant, edge, identity, rSwitch, tag, (&&&), (<<<), (>>>))
 import qualified FRP.Yampa as Yampa
 import FRP.Yampa.OpenAL.Source ()
 import FRP.Yampa.OpenAL.Util
@@ -53,22 +47,24 @@ listener =
 
 -----------------------------------------------------------
 
-{- | Smart constructor for the listener. It handles the movement.
--}
+-- | Smart constructor for the listener. It handles the movement.
 listener_ ::
     Maybe (V3 Float) ->
     Maybe (V3 Float) ->
     Maybe (V3 Float, V3 Float) ->
-    Maybe Float ->
+    Maybe AL.Gain ->
     SF a Listener
 {-# INLINE listener_ #-}
-listener_ mx0 mv0 mori0 mgain0 = proc _ -> do
-    let x0 = fromMaybe 0 mx0
+listener_ mx0 mv0 mori0 mgain0 = do
     let v0 = fromMaybe 0 mv0
-    let ori0 = fromMaybe (V3 0 (-1) 0, V3 0 0 1) mori0
-    let gain0 = fromMaybe 1 mgain0
-    dx <- Yampa.integral -< v0
-    returnA -< Listener (x0 + dx) v0 ori0 (realToFrac gain0)
+    let x0 = fromMaybe 0 mx0
+    let o0 = fromMaybe (V3 0 (-1) 0, V3 0 0 1) mori0
+    let g0 = fromMaybe 1 mgain0
+    Listener
+        <$> (arr (+ x0) <<< Yampa.integral <<< constant v0)
+        <*> constant v0
+        <*> constant o0
+        <*> constant g0
 
 -----------------------------------------------------------
 setListenerPosition ::
@@ -76,8 +72,8 @@ setListenerPosition ::
     SF a Listener ->
     SF a Listener
 {-# INLINE setListenerPosition #-}
-setListenerPosition =
-    undefined -- TODO
+setListenerPosition pos lis =
+    (constant pos &&& lis) >>> arr (\(x, l) -> l{listenerPosition = x})
 
 -----------------------------------------------------------
 withListenerVelocity ::
@@ -85,22 +81,52 @@ withListenerVelocity ::
     SF a Listener ->
     SF a Listener
 {-# INLINE withListenerVelocity #-}
-withListenerVelocity =
-    undefined -- TODO
+withListenerVelocity vel lis =
+    (lis &&& vel) >>> proc (lis0, vel0) -> do
+        let newSource =
+                listener_
+                    (Just (listenerPosition lis0))
+                    (Just vel0)
+                    (Just (listenerOrientation lis0))
+                    (Just (listenerGain lis0))
+        ev <- edge -< vel0 /= listenerVelocity lis0
+        rSwitch identity -< (lis0, tag ev newSource)
 
 -----------------------------------------------------------
+withListenerOrientation ::
+    SF a (V3 Float, V3 Float) ->
+    SF a Listener ->
+    SF a Listener
+{-# INLINE withListenerOrientation #-}
+withListenerOrientation ori lis =
+    (ori &&& lis) >>> arr (\(o, l) -> l{listenerOrientation = o})
+
+-----------------------------------------------------------
+withListenerGain ::
+    SF a AL.Gain ->
+    SF a Listener ->
+    SF a Listener
+{-# INLINE withListenerGain #-}
+withListenerGain gain lis =
+    (gain &&& lis) >>> arr (\(g, l) -> l{listenerGain = g})
+
+-----------------------------------------------------------
+
+-- | Updates only what have changed for the Listener.
 updateListener :: (MonadIO m) => Maybe Listener -> Listener -> m ()
-{-# INLINE updateListener #-}
-updateListener mlistener0 listener1 = liftIO do
-    case mlistener0 of
-        Nothing -> do
-            AL.listenerPosition $= _v3ToVertex (listenerPosition listener1)
-            AL.listenerVelocity $= _v3ToVector (listenerVelocity listener1)
-            AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation listener1)
-            AL.listenerGain $= abs (listenerGain listener1)
-        Just _listener0 -> do
-            -- TODO
-            setWhen AL.listenerPosition True (_v3ToVertex (listenerPosition listener1)) -- TODO check difference
-            setWhen AL.listenerVelocity True (_v3ToVector (listenerVelocity listener1)) -- TODO check difference
-            setWhen AL.orientation True (bimap _v3ToVector _v3ToVector (listenerOrientation listener1)) -- TODO check difference
-            setWhen AL.listenerGain True (abs (listenerGain listener1)) -- TODO check difference
+{-# INLINEABLE updateListener #-}
+updateListener mlistener0 listener1 =
+    liftIO $ do
+        case mlistener0 of
+            -- if the first execution we updated everything
+            Nothing -> do
+                AL.listenerPosition $= _v3ToVertex (listenerPosition listener1)
+                AL.listenerVelocity $= _v3ToVector (listenerVelocity listener1)
+                AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation listener1)
+                AL.listenerGain $= abs (listenerGain listener1)
+            -- otherwise we update only what changed
+            Just listener0 -> do
+                setWhen AL.listenerPosition (listenerPosition listener1 /= listenerPosition listener0) (_v3ToVertex (listenerPosition listener1))
+                setWhen AL.listenerVelocity (listenerVelocity listener1 /= listenerVelocity listener0) (_v3ToVector (listenerVelocity listener1))
+                setWhen AL.orientation (listenerOrientation listener1 /= listenerOrientation listener0) (bimap _v3ToVector _v3ToVector (listenerOrientation listener1))
+                setWhen AL.listenerGain (listenerGain listener1 /= listenerGain listener0) (abs (listenerGain listener1))

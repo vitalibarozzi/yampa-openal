@@ -59,7 +59,7 @@ main = do
             -- TODO test adding and removing sources dynamically in the middle of the program
             [ mkSrc
                 ogsrc
-                [hello]
+                []
                 --[sm,sm,sm1,sm1,sm1,sm2,sm2,sm2,sm3,sm3,sm3,sm2,sm2,sm2,sm1]
                 \s ->s
                      & setPosition (V3 (-10) 0 0)
@@ -71,11 +71,11 @@ main = do
                 --[sm,sm,sm1,sm1,sm1,sm2,sm2,sm2,sm3,sm3,sm3,sm2,sm2,sm2,sm1]
                      -- TODO and then we want to play it only when we send it an event using the State
                 \s ->s
-                     & setState AL.Stopped 
+                     -- & setState AL.Stopped 
                      & setPosition (V3 (-20) 0 5)
-                     & setVelocity (V3 15 0 0)
-                     & edgePlay isTriggered 
-                     & withPitch (constant 0.8)
+                     & setVelocity (V3 30 0 0)
+                     -- & edgePlay isTriggered 
+                     & withPitch (constant 1.8)
             ]
         t0 <- getCPUTime
         void $ timeout 10_000_000 $ forever do
