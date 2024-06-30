@@ -1,20 +1,14 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LiberalTypeSynonyms #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use newtype instead of data" #-}
-{-# OPTIONS_GHC -Wno-unused-do-bind #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-}
-
-module FRP.Yampa.OpenAL.Soundstage
+module FRP.Yampa.OpenAL.Soundstage (
+    Soundstage (..),
+    updateSoundstage,
+    soundstage_,
+    soundstage,
+)
 where
 
 import Control.Concurrent ()
-import Control.Monad (forM_, unless, when)
+import Control.Monad (forM_, unless)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Bifunctor (Bifunctor (bimap))
 import Data.IORef ()
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -27,8 +21,6 @@ import FRP.Yampa (
     Time,
     drpSwitchB,
     identity,
-    initially,
-    now,
     (&&&),
     (<<<),
  )
@@ -41,7 +33,7 @@ import FRP.Yampa.OpenAL.Source (
     updateSource,
  )
 import FRP.Yampa.OpenAL.Types (Factor, MetersPerSecond)
-import FRP.Yampa.OpenAL.Util (appName, setWhen, _v3ToVector, _v3ToVertex)
+import FRP.Yampa.OpenAL.Util (appName, setWhen)
 import Linear as L (V3 (..))
 import qualified Sound.OpenAL as AL
 
@@ -103,6 +95,10 @@ soundstage_ initialSources factor model pos vel gain k =
         <*> Yampa.time
 
 -----------------------------------------------------------
+
+{- | Updates only what have changed in the Soundstage. Also
+handles OpenAL errors.
+-}
 updateSoundstage ::
     (MonadIO m) =>
     Maybe Soundstage ->
@@ -117,13 +113,13 @@ updateSoundstage mss0 ss1 = do
             ($=) AL.dopplerFactor (abs (realToFrac $ soundstageDopplerFactor ss1))
             let sources1 = soundstageSources ss1
             updateListener Nothing (soundstageListener ss1)
-            forM_ sources1 \src1 -> updateSource (emptySource (sourceID src1)) src1
+            forM_ sources1 $ \src1 -> updateSource (emptySource (sourceID src1)) src1
         Just ss0 -> do
             setWhen AL.speedOfSound (soundstageSpeedOfSound ss1 /= soundstageSpeedOfSound ss0) (abs (realToFrac $ soundstageSpeedOfSound ss1))
             setWhen AL.distanceModel (soundstageDistanceModel ss1 /= soundstageDistanceModel ss0) (soundstageDistanceModel ss1)
             setWhen AL.dopplerFactor (soundstageDopplerFactor ss1 /= soundstageDopplerFactor ss0) (abs (realToFrac $ soundstageDopplerFactor ss1))
             updateListener (Just (soundstageListener ss0)) (soundstageListener ss1)
-            forM_ (soundstageSources ss1) \src1 -> do
+            forM_ (soundstageSources ss1) $ \src1 -> do
                 let sources0 = soundstageSources ss0
                 case Map.lookup (sourceID src1) sources0 of
                     Just src0 -> updateSource src0 src1
