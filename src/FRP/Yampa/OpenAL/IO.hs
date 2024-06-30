@@ -1,9 +1,4 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LiberalTypeSynonyms #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 module FRP.Yampa.OpenAL.IO (
     withSoundstage,
     withAL,
@@ -11,23 +6,21 @@ module FRP.Yampa.OpenAL.IO (
 )
 where
 
-import Control.Concurrent
-import Control.Monad
-import Control.Monad.IO.Class
-import Data.IORef
-import Data.StateVar
-import FRP.Yampa
+import Control.Concurrent ( modifyMVar_, newMVar )
+import Control.Monad ( when, (<=<) )
+import Control.Monad.IO.Class ( MonadIO(..) )
+import Data.IORef ( newIORef )
+import Data.StateVar ( HasGetter(get) )
+import FRP.Yampa ( SF, ReactHandle )
 import qualified FRP.Yampa as Yampa
-import FRP.Yampa.OpenAL.Soundstage
-import FRP.Yampa.OpenAL.Types
-import FRP.Yampa.OpenAL.Util
+import FRP.Yampa.OpenAL.Soundstage ( updateSoundstage, Soundstage )
+import FRP.Yampa.OpenAL.Types ( ALApp(ALApp) )
+import FRP.Yampa.OpenAL.Util ( appName )
 import qualified Sound.ALUT.Initialization as AL
-import Sound.OpenAL.AL.Extensions
-import Sound.OpenAL.AL.StringQueries
+import Sound.OpenAL.AL.Extensions ( alVersion )
+import Sound.OpenAL.AL.StringQueries ( alRenderer, alVendor )
 
--------------------------------------------------------------------------------
--- SIMPLE API -----------------------------------------------------------------
--------------------------------------------------------------------------------
+-----------------------------------------------------------
 
 -- | Main function of the library, to be used at the start of the program.
 withSoundstage ::
@@ -41,13 +34,11 @@ withSoundstage a sf reactimate_ =
     withAL do
         reactimate_ <=< reactInitSoundstage a sf
 
--------------------------------------------------------------------------------
--- ADVANCED API ---------------------------------------------------------------
--------------------------------------------------------------------------------
-
 -----------------------------------------------------------
--- | This is used to start the resources needed for our
--- integration with the OpenAL API.
+
+{- | This is used to start the resources needed for our
+integration with the OpenAL API.
+-}
 withAL ::
     (MonadIO m) =>
     -- | App cont.
@@ -60,6 +51,7 @@ withAL k = AL.runALUT appName [] \_ _ -> do
     k (ALApp ref ioref)
 
 -----------------------------------------------------------
+
 -- | Used to reactimate the SF using the OpenAL backend.
 reactInitSoundstage ::
     (MonadIO m) =>
@@ -79,5 +71,6 @@ reactInitSoundstage a sf _ = liftIO do
     Yampa.reactInit (pure a) (actuate soundstageRef) sf
   where
     actuate ssRef _ updated s1 = do
-        when updated (modifyMVar_ ssRef \ms0 -> updateSoundstage True ms0 s1 >> return (Just s1))
+        let updater ms0 = updateSoundstage True ms0 s1 >> return (Just s1)
+        when updated (modifyMVar_ ssRef updater)
         pure updated

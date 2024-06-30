@@ -1,15 +1,15 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE LiberalTypeSynonyms #-}
 {-# LANGUAGE NumericUnderscores #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 
+-- | Describes OpenAL source.
 module FRP.Yampa.OpenAL.Source (
+
+    -- * A sound source.
     Source (
         sourceRolloffFactor,
         sourceReferenceDistance,
@@ -47,16 +47,15 @@ module FRP.Yampa.OpenAL.Source (
     setOffset,
     setState, -- TODO replace with withState
     setQueue,
-    -- setMaxDistance,
-    -- setReferenceDistance,
-    -- setRolloffFactor,
+    setMaxDistance,
+    setReferenceDistance,
+    setRolloffFactor,
 
     -- * Variable setters.
-
-    -- withState,
-    -- withDirection
-    -- withConeAngles,
-    -- withConeOuterGain,
+    withState,
+    withDirection,
+    withConeAngles,
+    withConeOuterGain,
     withPitch,
     withGain,
 
@@ -723,3 +722,11 @@ updateSource s0 s1 = do
         notPlaying = _sourceState s0 == AL.Initial || _sourceState s0 == AL.Stopped || _sourceState s0 == AL.Paused
         notPaused = _sourceState s0 == AL.Stopped || _sourceState s0 == AL.Initial
         notStopped = _sourceState s0 == AL.Initial || _sourceState s0 == AL.Paused || _sourceState s0 == AL.Playing
+
+setMaxDistance = undefined
+setReferenceDistance = undefined
+setRolloffFactor = undefined
+withState = undefined
+withDirection = undefined
+withConeAngles = undefined
+withConeOuterGain = undefined

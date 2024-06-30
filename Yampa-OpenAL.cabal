@@ -6,7 +6,7 @@ cabal-version: 2.2
 
 name:           Yampa-OpenAL
 version:        0.1.0.1
-description:    Adapter between Yampa and OpenAL.
+description:    Adapter between Yampa and OpenAL+ALUT.
 homepage:       https://github.com/vitalibarozzi/yampa-openal#readme
 bug-reports:    https://github.com/vitalibarozzi/yampa-openal/issues
 author:         J. V. Vitali Barozzi

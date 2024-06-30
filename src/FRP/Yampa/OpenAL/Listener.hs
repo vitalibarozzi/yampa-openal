@@ -12,14 +12,14 @@ module FRP.Yampa.OpenAL.Listener (
 )
 where
 
-import Control.Monad.IO.Class
-import Data.Bifunctor
-import Data.Maybe
+import Control.Monad.IO.Class (MonadIO (..))
+import Data.Bifunctor (Bifunctor (bimap))
+import Data.Maybe (fromJust, fromMaybe, isNothing)
 import Data.StateVar (($=))
 import FRP.Yampa (SF, arr, constant, edge, identity, rSwitch, tag, (&&&), (<<<), (>>>))
 import qualified FRP.Yampa as Yampa
 import FRP.Yampa.OpenAL.Source ()
-import FRP.Yampa.OpenAL.Util
+import FRP.Yampa.OpenAL.Util (setWhen, _v3ToVector, _v3ToVertex)
 import Linear as L (V3 (..))
 import qualified Sound.OpenAL.AL as AL
 
@@ -115,18 +115,21 @@ withListenerGain gain lis =
 -- | Updates only what have changed for the Listener.
 updateListener :: (MonadIO m) => Maybe Listener -> Listener -> m ()
 {-# INLINEABLE updateListener #-}
-updateListener mlistener0 listener1 =
-    liftIO $ do
-        case mlistener0 of
-            -- if the first execution we updated everything
-            Nothing -> do
-                AL.listenerPosition $= _v3ToVertex (listenerPosition listener1)
-                AL.listenerVelocity $= _v3ToVector (listenerVelocity listener1)
-                AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation listener1)
-                AL.listenerGain $= abs (listenerGain listener1)
-            -- otherwise we update only what changed
-            Just listener0 -> do
-                setWhen AL.listenerPosition (listenerPosition listener1 /= listenerPosition listener0) (_v3ToVertex (listenerPosition listener1))
-                setWhen AL.listenerVelocity (listenerVelocity listener1 /= listenerVelocity listener0) (_v3ToVector (listenerVelocity listener1))
-                setWhen AL.orientation (listenerOrientation listener1 /= listenerOrientation listener0) (bimap _v3ToVector _v3ToVector (listenerOrientation listener1))
-                setWhen AL.listenerGain (listenerGain listener1 /= listenerGain listener0) (abs (listenerGain listener1))
+updateListener mlistener0 listener1
+    -- if the first execution we updated everything
+    | isNothing mlistener0 = do
+        AL.listenerPosition $= _v3ToVertex (listenerPosition listener1)
+        AL.listenerVelocity $= _v3ToVector (listenerVelocity listener1)
+        AL.orientation $= bimap _v3ToVector _v3ToVector (listenerOrientation listener1)
+        AL.listenerGain $= abs (listenerGain listener1)
+    -- otherwise we update only what changed
+    | otherwise = do
+        let listener0 = fromJust mlistener0
+        let (lpos0, lpos1) = (listenerPosition listener0, listenerPosition listener1)
+        let (lvel0, lvel1) = (listenerVelocity listener0, listenerVelocity listener1)
+        let (lori0, lori1) = (listenerOrientation listener0, listenerOrientation listener1)
+        let (lgai0, lgai1) = (listenerGain listener0, listenerGain listener1)
+        setWhen AL.listenerPosition (lpos0 /= lpos1) (_v3ToVertex lpos1)
+        setWhen AL.listenerVelocity (lvel0 /= lvel1) (_v3ToVector lvel1)
+        setWhen AL.orientation (lori0 /= lori1) (bimap _v3ToVector _v3ToVector lori1)
+        setWhen AL.listenerGain (lgai0 /= lgai1) (abs lgai1)
